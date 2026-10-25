@@ -20,6 +20,7 @@ local ERROR_KINDS = {
     malformed = true,
     no_match = true,
     network = true,
+    redirect = true, -- a download answered with a redirect; err.location
 }
 local MODULE_CA_BUNDLE
 do
@@ -30,10 +31,11 @@ do
     end
 end
 
-function M.failure(kind, status, retry_after)
+function M.failure(kind, status, retry_after, location)
     local err = { kind = kind }
     if status then err.status = status end
     if retry_after then err.retry_after = retry_after end
+    if location then err.location = location end
     return err
 end
 
@@ -228,7 +230,8 @@ function M.transportFailure(err)
     if type(err) ~= "table" or not ERROR_KINDS[err.kind] then
         return M.failure("network")
     end
-    return M.failure(err.kind, tonumber(err.status), tonumber(err.retry_after))
+    return M.failure(err.kind, tonumber(err.status), tonumber(err.retry_after),
+        type(err.location) == "string" and err.location or nil)
 end
 
 function M.decodeJson(response)
@@ -326,7 +329,7 @@ local function default_download(url, destination, host, headers)
         request_headers[key] = value
     end
     pcall(socketutil.set_timeout, socketutil, BLOCK_TIMEOUT, TOTAL_TIMEOUT)
-    local ok, result, status = pcall(http.request, {
+    local ok, result, status, response_headers = pcall(http.request, {
         url = url,
         method = "GET",
         redirect = false,
@@ -337,6 +340,13 @@ local function default_download(url, destination, host, headers)
     pcall(socketutil.reset_timeout, socketutil)
     pcall(file.close, file)
     status = tonumber(status)
+    if ok and (status == 301 or status == 302 or status == 307 or status == 308) then
+        -- Not followed here: the caller decides whether the next host is one
+        -- it trusts (see openlibrary.downloadCover).
+        os.remove(destination)
+        return nil, M.failure("redirect", status, nil,
+            header_value(response_headers, "location"))
+    end
     if not ok or result == nil or status ~= 200 or sink_error or bytes == 0 then
         os.remove(destination)
         if status == 429 then return nil, M.failure("rate_limited", status) end
