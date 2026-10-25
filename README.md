@@ -2,7 +2,7 @@
 
 Browse your library by author, with a photo and a short bio of each author.
 
-- **Main menu → Authors** (right after History). For one-tap access, assign
+- **Main menu → Authors** (above Favorites). For one-tap access, assign
   the **Authors** action to a gesture: Settings → Taps and gestures →
   Gesture manager → pick a gesture (e.g. tapping the top-left corner) →
   General → Authors.
