@@ -6,7 +6,7 @@
 -- Filters, which all must match:
 --   language, keywords -- one value each; an author is listed when any of
 --                         their books has it, with only those books.
---   country, genre     -- one value each, from the author's information
+--   country            -- one value, from the author's information
 --                         (author_info); all their books are listed.
 --   status             -- a set; an author is listed when any chosen status
 --                         applies:
@@ -33,9 +33,9 @@ M.NAME_POSITIONS = {
     below = { text = _("Below photo"), order = 1 },
     on_photo = { text = _("On photo"), order = 2 },
 }
-M.AUTHOR_PROPS = { "country", "genre" }
+M.AUTHOR_PROPS = { "country" }
 -- Where an author property's values are in author_info's records.
-local AUTHOR_FIELDS = { country = "countries", genre = "genres" }
+local AUTHOR_FIELDS = { country = "countries" }
 
 local function known(list)
     local set = {}
@@ -126,7 +126,7 @@ local function book_status(path)
     return require("ui/widget/booklist").getBookStatus(path)
 end
 
--- authorValues(info, prop) -> an author's values for country or genre.
+-- authorValues(info, prop) -> an author's values for an author property.
 function M.authorValues(info, prop)
     local values = type(info) == "table" and info[AUTHOR_FIELDS[prop]]
     return type(values) == "table" and values or {}
@@ -146,13 +146,12 @@ end
 function M.filterAuthors(books, filter, statusOf, infoOf)
     filter = filter or {}
     local authors = AuthorIndex.getAuthors(books, props_matcher(filter))
-    if filter.country or filter.genre then
+    if filter.country then
         infoOf = infoOf or require("authorinfo/author_info").load
         local kept = {}
         for _i, author in ipairs(authors) do
             local info = infoOf(author.name)
-            if (not filter.country or has_value(info, "country", filter.country))
-                    and (not filter.genre or has_value(info, "genre", filter.genre)) then
+            if has_value(info, "country", filter.country) then
                 kept[#kept + 1] = author
             end
         end
@@ -200,7 +199,7 @@ function M.filterAuthors(books, filter, statusOf, infoOf)
 end
 
 -- authorValueCounts(authors, prop, infoOf) -> { {value, count}, ... }: the
--- countries or genres of the given authors, counting authors.
+-- countries of the given authors, counting authors.
 function M.authorValueCounts(authors, prop, infoOf)
     infoOf = infoOf or require("authorinfo/author_info").load
     local counts, values = {}, {}
@@ -251,7 +250,6 @@ function M.propText(prop)
         language = _("Language"),
         keywords = _("Keywords"),
         country = _("Country"),
-        genre = _("Genre"),
     })[prop]
 end
 

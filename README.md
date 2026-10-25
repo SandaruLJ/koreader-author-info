@@ -24,7 +24,7 @@ Browse your library by author, with a photo and a short bio of each author.
     ("Walter de la Mare" → de la Mare), skipping suffixes like "Jr.".
   - **Filter:** by language or keywords, as in Collections: an author is
     shown when any of their books match, and only the matching books are
-    listed when you tap them. By the author's country or genre, once their
+    listed when you tap them. By the author's country, once their
     information has been looked up. And by status:
     - **New** / **Reading:** authors with a book that is new or in progress.
     - **Read:** authors with at least one finished book.

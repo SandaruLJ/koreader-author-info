@@ -110,15 +110,16 @@ describe("authors view options", function()
         assert.are.same({ "Becky Chambers", "Ursula K. Le Guin", "Liu Cixin", "Saki" }, names(sorted))
     end)
 
-    it("filters by country and genre from author information, listing all their books", function()
+    it("filters by country from author information, listing all their books", function()
         local infos = {
-            ["Terry Pratchett"] = { countries = { "United Kingdom" }, genres = { "fantasy", "fantasy comedy" } },
-            ["Neil Gaiman"] = { countries = { "United Kingdom", "United States" }, genres = { "fantasy" } },
-            ["Agatha Christie"] = { countries = { "United Kingdom" }, genres = { "crime fiction" } },
+            ["Terry Pratchett"] = { countries = { "United Kingdom" } },
+            ["Neil Gaiman"] = { countries = { "United Kingdom", "United States" } },
+            ["Agatha Christie"] = { countries = { "United Kingdom" } },
         }
         local infoOf = function(name) return infos[name] end
-        assert.are.same({ ["Neil Gaiman"] = { "/a", "/c" }, ["Terry Pratchett"] = { "/a", "/b" } },
-            shown(ViewOptions.filterAuthors(books, { genre = "fantasy" }, status_of, infoOf)))
+        assert.are.same({ ["Agatha Christie"] = { "/d" }, ["Neil Gaiman"] = { "/a", "/c" },
+                ["Terry Pratchett"] = { "/a", "/b" } },
+            shown(ViewOptions.filterAuthors(books, { country = "United Kingdom" }, status_of, infoOf)))
         assert.are.same({ ["Neil Gaiman"] = { "/a", "/c" } },
             shown(ViewOptions.filterAuthors(books, { country = "United States" }, status_of, infoOf)))
         assert.are.same({ { value = "United Kingdom", count = 3 }, { value = "United States", count = 1 } },

@@ -499,7 +499,7 @@ function M.showAuthors(ui)
                         apply()
                     end
                     -- Offer the values among what the other filters keep.
-                    if prop == "country" or prop == "genre" then
+                    if prop == "country" then
                         show_prop_values(
                             ViewOptions.authorValueCounts(ViewOptions.filterAuthors(books, filter), prop),
                             prop, pick,
@@ -520,8 +520,8 @@ function M.showAuthors(ui)
                 { status_button("new"), status_button("reading") },
                 { status_button("unread"), status_button("read") },
                 {},
-                { prop_button("language"), prop_button("keywords") },
-                { prop_button("country"), prop_button("genre") },
+                { prop_button("language"), prop_button("country") },
+                { prop_button("keywords") },
                 {},
                 {{
                     text = _("Reset all filters"),
