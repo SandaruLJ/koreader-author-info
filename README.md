@@ -12,9 +12,9 @@ Browse your library by author, with a photo and a short bio of each author.
   information**.
 - **Hold an author** for **Author information**, or to find, replace or
   remove their photo and information.
-- **Author information** is laid out like KOReader's Book information: the
-  photo (tap to display), name, years, country, genres, notable works, bio
-  (tap to read), number of books in the library, and sources.
+- **Author information** is laid out like KOReader's Book information:
+  name, years, country, genres, notable works, bio (tap to read), photo (tap
+  to display), number of books in the library, and sources.
 - The **☰ button** has:
   - **Sort by:** first name, last name, number of books or recently read,
     optionally reversed. For first name, a name written "Le Guin, Ursula K."

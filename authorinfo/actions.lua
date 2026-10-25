@@ -279,16 +279,6 @@ function M.showDetails(name, book_count)
     local photo = images().path(name)
     local n_a = _("N/A")
     local kv_pairs = {
-        { _("Photo:"), photo and _("Tap to display") or n_a,
-            callback = photo and function()
-                UIManager:show(require("ui/widget/imageviewer"):new{
-                    file = photo,
-                    with_title_bar = false,
-                    fullscreen = true,
-                })
-            end or nil,
-            separator = true,
-        },
         { _("Name:"), name },
         { _("Born:"), info.born or n_a },
         { _("Died:"), info.died or n_a },
@@ -301,6 +291,15 @@ function M.showDetails(name, book_count)
                     title = _("Bio"),
                     text = info.bio,
                     text_type = "book_info",
+                })
+            end or nil,
+        },
+        { _("Photo:"), photo and _("Tap to display") or n_a,
+            callback = photo and function()
+                UIManager:show(require("ui/widget/imageviewer"):new{
+                    file = photo,
+                    with_title_bar = false,
+                    fullscreen = true,
                 })
             end or nil,
             separator = true,
