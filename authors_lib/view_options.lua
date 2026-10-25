@@ -229,13 +229,38 @@ end
 -- Sorting
 -- ---------------------------------------------------------------------
 
--- surname(name) -> "Le Guin" for "Le Guin, Ursula K."; without a comma, the
--- last word ("Terry Pratchett" -> "Pratchett"). Approximate: "Ursula K. Le
--- Guin" gives "Guin", and particles like "von" are not handled.
+-- Words that belong to the surname when they come right before it
+-- ("Le Guin", "de la Mare", "van Beethoven"), compared in lower case.
+local PARTICLES = {}
+for _i, word in ipairs({
+    "da", "das", "de", "dei", "del", "della", "der", "des", "di", "do", "dos", "du",
+    "la", "le", "les", "lo", "van", "von", "ten", "ter", "zu", "st.", "san", "bin", "ibn",
+    "al", "el", "mac", "af", "av",
+}) do PARTICLES[word] = true end
+
+-- Words after the surname that are not part of it ("King Jr.").
+local SUFFIXES = {}
+for _i, word in ipairs({ "jr", "jr.", "sr", "sr.", "ii", "iii", "iv", "phd", "md" }) do
+    SUFFIXES[word] = true
+end
+
+-- surname(name) -> the part to sort a name by:
+--   "Le Guin, Ursula K."     -> "Le Guin"      (comma: what comes before it)
+--   "Ursula K. Le Guin"      -> "Le Guin"      (particles join the last word)
+--   "Martin Luther King Jr." -> "King"         (suffixes are skipped)
+--   "Van Morrison"           -> "Morrison"     (a first word is a given name)
+-- Conventions differ between languages; this follows the common English one.
 function M.surname(name)
-    local last = name:match("^([^,]+),")
-    if last then return last:match("^%s*(.-)%s*$") end
-    return name:match("(%S+)%s*$") or name
+    local last, rest = name:match("^([^,]+),%s*(.-)%s*$")
+    if last and not SUFFIXES[rest:lower()] then return last:match("^%s*(.-)%s*$") end
+    local words = {}
+    for word in name:gmatch("%S+") do words[#words + 1] = word end
+    local stop = #words
+    while stop > 1 and SUFFIXES[words[stop]:lower():gsub(",$", "")] do stop = stop - 1 end
+    if stop < 1 then return name end
+    local start = stop
+    while start > 2 and PARTICLES[words[start - 1]:lower()] do start = start - 1 end
+    return (table.concat(words, " ", start, stop):gsub(",+$", ""))
 end
 
 -- Each sort orders the authors list ({name, files}); "reverse" flips it.
@@ -249,7 +274,7 @@ M.SORTS = {
         text = _("Last name"),
         order = 2,
         less = function(a, b)
-            local ka, kb = M.surname(a.name), M.surname(b.name)
+            local ka, kb = M.surname(a.name):lower(), M.surname(b.name):lower()
             if ka ~= kb then return ffiUtil.strcoll(ka, kb) end
             return ffiUtil.strcoll(a.name, b.name)
         end,

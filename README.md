@@ -12,9 +12,11 @@ Browse your library by author, with a photo of each author.
 - **Hold an author** to find, replace or remove their photo.
 - The **☰ button** has:
   - **Sort by:** name, last name, number of books or recently read,
-    optionally reversed. Last name is the part before a comma ("Le Guin,
-    Ursula K."), otherwise the last word, so "Ursula K. Le Guin" sorts
-    under G.
+    optionally reversed. For last name, a name written "Le Guin, Ursula K."
+    sorts by the part before the comma. Otherwise it is the last word
+    together with particles before it ("Ursula K. Le Guin" → Le Guin,
+    "Walter de la Mare" → de la Mare), skipping suffixes like "Jr.". This
+    follows the English convention; Dutch-style "van Gogh" sorts under V.
   - **Filter:** by language or keywords, as in Collections: an author is
     shown when any of their books match, and only the matching books are
     listed when you tap them. And by status:

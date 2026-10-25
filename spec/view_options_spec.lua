@@ -65,6 +65,34 @@ describe("authors view options", function()
             names(ViewOptions.sort(authors(), { sort = "name", reverse = true })))
     end)
 
+    it("finds surnames with particles and suffixes", function()
+        local cases = {
+            ["Terry Pratchett"] = "Pratchett",
+            ["Le Guin, Ursula K."] = "Le Guin",
+            ["Ursula K. Le Guin"] = "Le Guin",
+            ["Walter de la Mare"] = "de la Mare",
+            ["Ludwig van Beethoven"] = "van Beethoven",
+            ["Johann Wolfgang von Goethe"] = "von Goethe",
+            ["Martin Luther King Jr."] = "King",
+            ["Martin Luther King, Jr."] = "King",
+            ["John Smith III"] = "Smith",
+            ["Van Morrison"] = "Morrison",
+            ["Saki"] = "Saki",
+            ["Anonymous"] = "Anonymous",
+        }
+        for name, expected in pairs(cases) do
+            assert.are.equal(expected, ViewOptions.surname(name), name)
+        end
+        local sorted = ViewOptions.sort({
+            { name = "Walter de la Mare", files = {} },
+            { name = "Ursula K. Le Guin", files = {} },
+            { name = "Agatha Christie", files = {} },
+            { name = "Martin Luther King Jr.", files = {} },
+        }, { sort = "last_name" })
+        assert.are.same({ "Agatha Christie", "Walter de la Mare", "Martin Luther King Jr.", "Ursula K. Le Guin" },
+            names(sorted))
+    end)
+
     it("Read lists authors with a finished book, and only those books", function()
         assert.are.same({ ["Neil Gaiman"] = { "/a" }, ["Terry Pratchett"] = { "/a" } },
             shown(ViewOptions.filterAuthors(books, { status = { read = true } }, status_of)))
