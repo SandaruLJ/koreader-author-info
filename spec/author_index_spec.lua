@@ -23,15 +23,24 @@ describe("author index", function()
 
     it("lists each book under every author, sorted, inside the home folder only", function()
         for _i, p in ipairs({ "/books/a.epub", "/books/b.epub", "/elsewhere/c.epub" }) do existing[p] = true end
-        local authors = AuthorIndex.getAuthors({
+        local authors = AuthorIndex.getAuthors(AuthorIndex.getBooks({
             { path = "/books/a.epub", authors = "Terry Pratchett\nNeil Gaiman" },
             { path = "/books/b.epub", authors = "Neil Gaiman" },
             { path = "/books/deleted.epub", authors = "Ghost Writer" },
             { path = "/elsewhere/c.epub", authors = "Outside Author" },
-        })
+        }))
         assert.are.same({
             { name = "Neil Gaiman", files = { "/books/a.epub", "/books/b.epub" } },
             { name = "Terry Pratchett", files = { "/books/a.epub" } },
         }, authors)
+    end)
+
+    it("lists only the books a filter keeps", function()
+        local books = {
+            { path = "/books/a.epub", authors = "Terry Pratchett\nNeil Gaiman" },
+            { path = "/books/b.epub", authors = "Neil Gaiman" },
+        }
+        local authors = AuthorIndex.getAuthors(books, function(book) return book.path == "/books/b.epub" end)
+        assert.are.same({ { name = "Neil Gaiman", files = { "/books/b.epub" } } }, authors)
     end)
 end)

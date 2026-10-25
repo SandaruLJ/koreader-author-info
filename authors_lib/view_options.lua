@@ -1,0 +1,311 @@
+-- The Authors view's sort order and filters, remembered between visits the
+-- way KOReader remembers a collection's (saved as they change, no "save view"
+-- step).
+--
+-- Filters, which all must match:
+--   language, keywords -- one value each; an author is listed when any of
+--                         their books has it, with only those books.
+--   status             -- a set; an author is listed when any chosen status
+--                         applies:
+--     new, reading     -- has a book with that status (only those listed)
+--     read             -- has a finished book (only finished ones listed)
+--     unread           -- has no finished book at all (all books listed)
+
+local ffiUtil = require("ffi/util")
+local _ = require("gettext")
+local T = ffiUtil.template
+
+local AuthorIndex = require("authors_lib/author_index")
+
+local M = {}
+
+local SETTINGS_KEY = "authors_view"
+
+M.STATUSES = { "new", "reading", "unread", "read" }
+M.PROPS = { "language", "keywords" }
+
+local function known(list)
+    local set = {}
+    for _i, value in ipairs(list) do set[value] = true end
+    return set
+end
+local KNOWN_STATUSES = known(M.STATUSES)
+
+-- load() -> { sort, reverse, filter }, dropping anything no longer offered
+-- (an older sort or filter saved before it was removed).
+function M.load()
+    local saved = G_reader_settings:readSetting(SETTINGS_KEY)
+    saved = type(saved) == "table" and saved or {}
+    local filter = {}
+    local saved_filter = type(saved.filter) == "table" and saved.filter or {}
+    if type(saved_filter.status) == "table" then
+        for status in pairs(saved_filter.status) do
+            if KNOWN_STATUSES[status] then
+                filter.status = filter.status or {}
+                filter.status[status] = true
+            end
+        end
+    end
+    for _i, prop in ipairs(M.PROPS) do
+        if type(saved_filter[prop]) == "string" then filter[prop] = saved_filter[prop] end
+    end
+    return {
+        sort = M.SORTS[saved.sort] and saved.sort or "name",
+        reverse = saved.reverse == true,
+        filter = filter,
+    }
+end
+
+function M.save(options)
+    G_reader_settings:saveSetting(SETTINGS_KEY, {
+        sort = options.sort,
+        reverse = options.reverse or nil,
+        filter = next(options.filter) and options.filter or nil,
+    })
+end
+
+-- ---------------------------------------------------------------------
+-- Filters
+-- ---------------------------------------------------------------------
+
+-- propValues(book, prop) -> the values a book has for a metadata field.
+-- Keywords may hold several, one per line; languages compare in lower case,
+-- as Collections does.
+function M.propValues(book, prop)
+    local value = book[prop]
+    if type(value) ~= "string" or value == "" then return {} end
+    if prop == "language" then return { value:lower() } end
+    local values = {}
+    for line in value:gmatch("[^\n]+") do
+        line = line:match("^%s*(.-)%s*$")
+        if line ~= "" then values[#values + 1] = line end
+    end
+    return values
+end
+
+local function props_matcher(filter)
+    local any = false
+    for _i, prop in ipairs(M.PROPS) do
+        if filter[prop] then any = true end
+    end
+    if not any then return nil end
+    return function(book)
+        for _i, prop in ipairs(M.PROPS) do
+            local wanted = filter[prop]
+            if wanted then
+                local found = false
+                for _j, value in ipairs(M.propValues(book, prop)) do
+                    if value == wanted then found = true; break end
+                end
+                if not found then return false end
+            end
+        end
+        return true
+    end
+end
+
+local function book_status(path)
+    return require("ui/widget/booklist").getBookStatus(path)
+end
+
+-- filterAuthors(books, filter, statusOf) -> the authors to show, each with
+-- the books to list for them. statusOf(path) -> "new" | "reading" |
+-- "abandoned" | "complete" is for specs.
+function M.filterAuthors(books, filter, statusOf)
+    filter = filter or {}
+    local authors = AuthorIndex.getAuthors(books, props_matcher(filter))
+    local wanted = filter.status
+    if not wanted then return authors end
+
+    statusOf = statusOf or book_status
+    local statuses = {}
+    local function status(path)
+        if not statuses[path] then statuses[path] = statusOf(path) end
+        return statuses[path]
+    end
+    -- "Unread" asks about all of an author's books, whatever else is filtered.
+    local has_read = {}
+    if wanted.unread then
+        for _i, book in ipairs(books) do
+            if status(book.path) == "complete" then
+                for _j, name in ipairs(AuthorIndex.splitAuthors(book.authors)) do
+                    has_read[name] = true
+                end
+            end
+        end
+    end
+
+    local result = {}
+    for _i, author in ipairs(authors) do
+        local files
+        if wanted.unread and not has_read[author.name] then
+            files = author.files
+        else
+            files = {}
+            for _j, file in ipairs(author.files) do
+                local s = status(file)
+                if (wanted.new and s == "new") or (wanted.reading and s == "reading")
+                        or (wanted.read and s == "complete") then
+                    files[#files + 1] = file
+                end
+            end
+        end
+        if #files > 0 then result[#result + 1] = { name = author.name, files = files } end
+    end
+    return result
+end
+
+-- keptBooks(books, filter, statusOf) -> the books the shown authors list:
+-- where the value lists for further filters come from.
+function M.keptBooks(books, filter, statusOf)
+    local kept = {}
+    for _i, author in ipairs(M.filterAuthors(books, filter, statusOf)) do
+        for _j, file in ipairs(author.files) do kept[file] = true end
+    end
+    local result = {}
+    for _i, book in ipairs(books) do
+        if kept[book.path] then result[#result + 1] = book end
+    end
+    return result
+end
+
+-- valueCounts(books, prop) -> { {value, count}, ... } sorted by value: the
+-- choices offered when filtering by prop.
+function M.valueCounts(books, prop)
+    local counts, values = {}, {}
+    for _i, book in ipairs(books) do
+        for _j, value in ipairs(M.propValues(book, prop)) do
+            if not counts[value] then values[#values + 1] = value end
+            counts[value] = (counts[value] or 0) + 1
+        end
+    end
+    table.sort(values, function(a, b) return ffiUtil.strcoll(a, b) end)
+    local result = {}
+    for _i, value in ipairs(values) do result[#result + 1] = { value = value, count = counts[value] } end
+    return result
+end
+
+function M.propText(prop)
+    return ({
+        language = _("Language"),
+        keywords = _("Keywords"),
+    })[prop]
+end
+
+function M.statusText(status)
+    return ({
+        new = _("New"),
+        reading = _("Reading"),
+        unread = _("Unread"),
+        read = _("Read"),
+    })[status]
+end
+
+-- describe(filter) -> a short summary for the view's subtitle, or nil.
+function M.describe(filter)
+    if not filter or next(filter) == nil then return nil end
+    local parts = {}
+    if filter.status then
+        local names = {}
+        for _i, status in ipairs(M.STATUSES) do
+            if filter.status[status] then names[#names + 1] = M.statusText(status) end
+        end
+        parts[#parts + 1] = table.concat(names, ", ")
+    end
+    for _i, prop in ipairs(M.PROPS) do
+        if filter[prop] then parts[#parts + 1] = T("%1: %2", M.propText(prop), filter[prop]) end
+    end
+    return table.concat(parts, " · ")
+end
+
+-- toggleStatus(filter, status): the status filter is a set of choices.
+function M.toggleStatus(filter, status)
+    filter.status = filter.status or {}
+    filter.status[status] = not filter.status[status] or nil
+    if next(filter.status) == nil then filter.status = nil end
+end
+
+-- ---------------------------------------------------------------------
+-- Sorting
+-- ---------------------------------------------------------------------
+
+-- surname(name) -> "Le Guin" for "Le Guin, Ursula K."; without a comma, the
+-- last word ("Terry Pratchett" -> "Pratchett"). Approximate: "Ursula K. Le
+-- Guin" gives "Guin", and particles like "von" are not handled.
+function M.surname(name)
+    local last = name:match("^([^,]+),")
+    if last then return last:match("^%s*(.-)%s*$") end
+    return name:match("(%S+)%s*$") or name
+end
+
+-- Each sort orders the authors list ({name, files}); "reverse" flips it.
+M.SORTS = {
+    name = {
+        text = _("Name"),
+        order = 1,
+        less = function(a, b) return ffiUtil.strcoll(a.name, b.name) end,
+    },
+    last_name = {
+        text = _("Last name"),
+        order = 2,
+        less = function(a, b)
+            local ka, kb = M.surname(a.name), M.surname(b.name)
+            if ka ~= kb then return ffiUtil.strcoll(ka, kb) end
+            return ffiUtil.strcoll(a.name, b.name)
+        end,
+    },
+    books = {
+        text = _("Number of books"),
+        order = 3,
+        -- Most books first; ties by name.
+        less = function(a, b)
+            if #a.files ~= #b.files then return #a.files > #b.files end
+            return ffiUtil.strcoll(a.name, b.name)
+        end,
+    },
+    recent = {
+        text = _("Recently read"),
+        order = 4,
+        -- Filled in by sort(): the latest time any of the author's books was read.
+        less = nil,
+    },
+}
+
+local function last_read_times()
+    local times = {}
+    local ok, ReadHistory = pcall(require, "readhistory")
+    for _i, entry in ipairs(ok and ReadHistory.hist or {}) do
+        if entry.file and (times[entry.file] or 0) < (entry.time or 0) then
+            times[entry.file] = entry.time
+        end
+    end
+    return times
+end
+
+-- sort(authors, options, read_times) sorts in place. read_times (file ->
+-- time) is for specs.
+function M.sort(authors, options, read_times)
+    local less = M.SORTS[options.sort] and M.SORTS[options.sort].less
+    if options.sort == "recent" then
+        read_times = read_times or last_read_times()
+        local latest = {}
+        for _i, author in ipairs(authors) do
+            local t = 0
+            for _j, file in ipairs(author.files) do t = math.max(t, read_times[file] or 0) end
+            latest[author] = t
+        end
+        less = function(a, b)
+            if latest[a] ~= latest[b] then return latest[a] > latest[b] end
+            return ffiUtil.strcoll(a.name, b.name)
+        end
+    end
+    less = less or M.SORTS.name.less
+    if options.reverse then
+        local forward = less
+        less = function(a, b) return forward(b, a) end
+    end
+    table.sort(authors, less)
+    return authors
+end
+
+return M
