@@ -26,7 +26,7 @@ local M = {}
 M.MAX_UNREACHABLE = 3
 
 local function images()
-    return require("authors_lib/author_images")
+    return require("authorinfo/author_images")
 end
 
 local function unreachable_text()
@@ -58,7 +58,7 @@ end
 -- forked child; the child saves the photo itself and answers with one line.
 local function lookup(Trapper, name, trap)
     local completed, out = Trapper:dismissableRunInSubprocess(function()
-        local path, why = require("authors_lib/author_images").fetch(name)
+        local path, why = require("authorinfo/author_images").fetch(name)
         return (path and "found" or "missed") .. "\n" .. tostring(why or "")
     end, trap, true)
     if not completed then return false end

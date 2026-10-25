@@ -15,11 +15,11 @@ local ffiUtil = require("ffi/util")
 local _ = require("gettext")
 local T = ffiUtil.template
 
-local AuthorIndex = require("authors_lib/author_index")
+local AuthorIndex = require("authorinfo/author_index")
 
 local M = {}
 
-local SETTINGS_KEY = "authors_view"
+local SETTINGS_KEY = "author_info_view"
 
 M.STATUSES = { "new", "reading", "unread", "read" }
 M.PROPS = { "language", "keywords" }

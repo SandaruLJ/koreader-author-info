@@ -1,4 +1,4 @@
-# Authors for KOReader
+# Author Info for KOReader
 
 Browse your library by author, with a photo of each author.
 
@@ -38,12 +38,12 @@ Books with several authors are listed under each of them.
 - Photos come from Open Library, or from Wikipedia when Open Library has
   none. A Wikipedia page is used only if its description says the person is
   a writer. Nothing is downloaded unless you ask.
-- Photos are saved in `koreader/author-images/<Author Name>.jpg`. You can put
+- Photos are saved in `koreader/author-info/<Author Name>.jpg`. You can put
   your own JPEG or PNG there under the same name.
 
 ## Install
 
-Copy this folder into KOReader's `plugins` folder as `authors.koplugin`.
+Copy this folder into KOReader's `plugins` folder as `author-info.koplugin`.
 Requires the Cover browser plugin (bundled with KOReader).
 
 ## Credits and license

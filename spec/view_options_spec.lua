@@ -16,9 +16,9 @@ describe("authors view options", function()
         }
         package.loaded["gettext"] = setmetatable({}, { __call = function(_self, s) return s end })
         package.loaded["libs/libkoreader-lfs"] = { attributes = function() return "file" end }
-        package.loaded["authors_lib/author_index"] = nil
-        package.loaded["authors_lib/view_options"] = nil
-        ViewOptions = require("authors_lib/view_options")
+        package.loaded["authorinfo/author_index"] = nil
+        package.loaded["authorinfo/view_options"] = nil
+        ViewOptions = require("authorinfo/view_options")
     end)
 
     local function names(authors)
@@ -139,7 +139,7 @@ describe("authors view options", function()
         assert.is_true(loaded.reverse)
         assert.are.equal("Unread · Keywords: Fantasy", ViewOptions.describe(loaded.filter))
 
-        saved.authors_view = { sort = "first_name", filter = { series = "Discworld",
+        saved.author_info_view = { sort = "first_name", filter = { series = "Discworld",
             status = { abandoned = true, complete = true, read = true } } }
         assert.are.same({ sort = "name", reverse = false, filter = { status = { read = true } } },
             ViewOptions.load())

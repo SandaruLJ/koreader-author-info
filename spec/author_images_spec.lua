@@ -54,8 +54,8 @@ describe("author images", function()
     end
 
     before_each(function()
-        package.loaded["authors_lib/author_images"] = nil
-        AuthorImages = require("authors_lib/author_images")
+        package.loaded["authorinfo/author_images"] = nil
+        AuthorImages = require("authorinfo/author_images")
         dir = os.tmpname()
         os.remove(dir)
         AuthorImages._setDir(dir)

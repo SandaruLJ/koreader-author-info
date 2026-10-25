@@ -10,8 +10,8 @@ describe("author index", function()
             end,
         }
         package.loaded["ffi/util"] = { strcoll = function(a, b) return a < b end }
-        package.loaded["authors_lib/author_index"] = nil
-        AuthorIndex = require("authors_lib/author_index")
+        package.loaded["authorinfo/author_index"] = nil
+        AuthorIndex = require("authorinfo/author_index")
         _G.G_reader_settings = { readSetting = function() return "/books/" end }
     end)
 

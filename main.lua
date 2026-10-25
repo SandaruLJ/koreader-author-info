@@ -1,4 +1,4 @@
--- Authors: browse your library by author, with each author's photo.
+-- Author Info: browse your library by author, with each author's photo.
 --
 -- Main menu > Authors (next to History and Collections), or the "Authors"
 -- gesture action, opens a grid of authors in the file browser's display
@@ -8,36 +8,36 @@ local Dispatcher = require("dispatcher")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 
-local Authors = WidgetContainer:extend{
-    name = "authors",
+local AuthorInfo = WidgetContainer:extend{
+    name = "author-info",
     is_doc_only = false,
 }
 
-function Authors:onDispatcherRegisterActions()
-    Dispatcher:registerAction("show_authors", {
+function AuthorInfo:onDispatcherRegisterActions()
+    Dispatcher:registerAction("author_info_show_authors", {
         category = "none",
-        event = "ShowAuthors",
+        event = "AuthorInfoShowAuthors",
         title = _("Authors"),
         general = true,
     })
 end
 
-function Authors:init()
+function AuthorInfo:init()
     self:onDispatcherRegisterActions()
     self.ui.menu:registerToMainMenu(self)
 end
 
-function Authors:addToMainMenu(menu_items)
-    menu_items.authors = {
+function AuthorInfo:addToMainMenu(menu_items)
+    menu_items.author_info = {
         text = _("Authors"),
         sorting_hint = "main",
-        callback = function() self:onShowAuthors() end,
+        callback = function() self:onAuthorInfoShowAuthors() end,
     }
 end
 
-function Authors:onShowAuthors()
-    require("authors_lib/views").showAuthors(self.ui)
+function AuthorInfo:onAuthorInfoShowAuthors()
+    require("authorinfo/views").showAuthors(self.ui)
     return true
 end
 
-return Authors
+return AuthorInfo

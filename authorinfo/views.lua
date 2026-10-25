@@ -39,10 +39,10 @@ local _ = require("gettext")
 local N_ = _.ngettext
 local Screen = Device.screen
 
-local AuthorIndex = require("authors_lib/author_index")
-local AuthorImages = require("authors_lib/author_images")
-local Actions = require("authors_lib/actions")
-local ViewOptions = require("authors_lib/view_options")
+local AuthorIndex = require("authorinfo/author_index")
+local AuthorImages = require("authorinfo/author_images")
+local Actions = require("authorinfo/actions")
+local ViewOptions = require("authorinfo/view_options")
 
 local M = {}
 

@@ -3,7 +3,7 @@
 -- never follows redirects, so each hop is checked against an allow-list here.
 -- From ZenOS (GPL-3.0), modules/filebrowser/metadata/open_library.lua.
 
-local Http = require("authors_lib/http")
+local Http = require("authorinfo/http")
 
 local M = {}
 local COVER_HOST = "covers.openlibrary.org"

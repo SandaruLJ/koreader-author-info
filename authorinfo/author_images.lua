@@ -16,13 +16,13 @@
 --      (writer)" and so on), and only when the page's short description says
 --      the person writes: never a footballer of the same name.
 --
--- Photos are saved as <data dir>/author-images/<author>.jpg. A picture
+-- Photos are saved as <data dir>/author-info/<author>.jpg. A picture
 -- placed there by hand (jpg, jpeg or png) is used the same way.
 --
 -- Placeholder names (Anonymous, Various, Unknown) are never looked up: both
 -- sources have records for them, and none of those is a person.
 
-local Http = require("authors_lib/http")
+local Http = require("authorinfo/http")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 
@@ -209,7 +209,7 @@ local dir_override
 function M.dir()
     if dir_override then return dir_override end
     local DataStorage = require("datastorage")
-    return DataStorage:getDataDir() .. "/author-images"
+    return DataStorage:getDataDir() .. "/author-info"
 end
 
 -- For specs: point the store somewhere disposable.
@@ -457,7 +457,7 @@ M._compact = compact
 
 local function download(url, destination, transport)
     if url:sub(1, #"https://covers.openlibrary.org/") == "https://covers.openlibrary.org/" then
-        return require("authors_lib/openlibrary")
+        return require("authorinfo/openlibrary")
             .downloadCover(url, destination, transport)
     end
     local host = wikimedia_host(url)
