@@ -293,7 +293,10 @@ function M.showDetails(name, book_count)
                     text_type = "book_info",
                 })
             end or nil,
+            separator = true,
         },
+        -- The photo in a section of its own, as the cover image is in Book
+        -- information.
         { _("Photo:"), photo and _("Tap to display") or n_a,
             callback = photo and function()
                 UIManager:show(require("ui/widget/imageviewer"):new{
