@@ -2,8 +2,10 @@
 
 Browse your library by author, with a photo and a short bio of each author.
 
-- **Main menu → Authors** (next to History and Collections), or assign the
-  **Authors** action to a gesture.
+- **Main menu → Authors** (right after History). For one-tap access, assign
+  the **Authors** action to a gesture: Settings → Taps and gestures →
+  Gesture manager → pick a gesture (e.g. tapping the top-left corner) →
+  General → Authors.
 - When the file browser shows covers, authors appear in the same grid, with
   each author's photo and name. In list or classic modes they appear in
   KOReader's standard list.
