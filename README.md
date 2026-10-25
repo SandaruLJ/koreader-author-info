@@ -31,7 +31,7 @@ Browse your library by author, with a photo and a short bio of each author.
     - **Read:** authors with at least one finished book.
     - **Unread:** authors with no finished book at all.
   - **Name position** (in the grid): below the photo, or on the photo in
-    white on a darkened band across its bottom.
+    white on a black band across its bottom.
   - **Find missing images and information** for the authors shown.
 
   These choices are remembered for next time, as KOReader does

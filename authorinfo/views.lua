@@ -52,10 +52,10 @@ local PHOTO_RATIO = 3 / 4
 local NAME_FONT_SIZE = 16
 local NAME_FONT_MIN = 10 -- CoverBrowser's floor for folder names
 -- With the name position "on_photo" (the menu's name_position), a grid tile
--- shows the author's name in white on a band that darkens the photo's
--- bottom, instead of below the photo. How much the band darkens (0..1), and
--- its padding:
-local OVERLAY_DARKEN = 0.65
+-- shows the author's name in white on a solid black band across the photo's
+-- bottom, instead of below the photo: solid like KOReader's own overlays
+-- (a sleep screen message's fill), and as legible on e-ink over any photo.
+-- The band's padding:
 local OVERLAY_PADDING = 4
 
 -- CoverBrowser's modules, when that plugin is enabled.
@@ -141,7 +141,7 @@ local function fit_label(text, width, fgcolor)
 end
 
 -- NamedPhoto: a framed photo with the name painted over its bottom, on a
--- band that darkens the photo there.
+-- black band.
 local NamedPhoto = WidgetContainer:extend{
     label = nil,  -- TextWidget, in white
     band_h = nil,
@@ -154,7 +154,7 @@ function NamedPhoto:paintTo(bb, x, y)
     self.dimen = Geom:new{ x = x, y = y, w = size.w, h = size.h }
     local band_w = size.w - 2 * self.border
     local band_y = y + size.h - self.border - self.band_h
-    bb:darkenRect(x + self.border, band_y, band_w, self.band_h, OVERLAY_DARKEN)
+    bb:paintRect(x + self.border, band_y, band_w, self.band_h, Blitbuffer.COLOR_BLACK)
     local label_size = self.label:getSize()
     self.label:paintTo(bb, x + math.floor((size.w - label_size.w) / 2),
         band_y + math.floor((self.band_h - label_size.h) / 2))
