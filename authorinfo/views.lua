@@ -31,6 +31,7 @@ local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
 local VerticalSpan = require("ui/widget/verticalspan")
+local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local ffiUtil = require("ffi/util")
 local lfs = require("libs/libkoreader-lfs")
 local util = require("util")
@@ -51,6 +52,12 @@ local M = {}
 local PHOTO_RATIO = 3 / 4
 local NAME_FONT_SIZE = 16
 local NAME_FONT_MIN = 10 -- CoverBrowser's floor for folder names
+-- With the name position "on_photo" (the menu's name_position), a grid tile
+-- shows the author's name in white on a band that darkens the photo's
+-- bottom, instead of below the photo. How much the band darkens (0..1), and
+-- its padding:
+local OVERLAY_DARKEN = 0.65
+local OVERLAY_PADDING = 4
 
 -- CoverBrowser's modules, when that plugin is enabled.
 local function coverbrowser()
@@ -113,6 +120,47 @@ local function photo_widget(path, w, h)
     }
 end
 
+-- fit_label(text, width, fgcolor) -> a one-line TextWidget. As CoverBrowser
+-- does for folder names: decrease the font size until the name fits, down to
+-- NAME_FONT_MIN; below that it is truncated with "…".
+local function fit_label(text, width, fgcolor)
+    local font_size = NAME_FONT_SIZE
+    local label
+    while true do
+        if label then label:free() end
+        local at_min = font_size <= NAME_FONT_MIN
+        label = TextWidget:new{
+            text = text,
+            face = Font:getFace("cfont", font_size),
+            fgcolor = fgcolor,
+            -- Measure the whole name; only truncate once at the minimum size.
+            max_width = at_min and width or nil,
+        }
+        if at_min or label:getSize().w <= width then return label end
+        font_size = font_size - 1
+    end
+end
+
+-- NamedPhoto: a framed photo with the name painted over its bottom, on a
+-- band that darkens the photo there.
+local NamedPhoto = WidgetContainer:extend{
+    label = nil,  -- TextWidget, in white
+    band_h = nil,
+    border = nil,
+}
+
+function NamedPhoto:paintTo(bb, x, y)
+    self[1]:paintTo(bb, x, y)
+    local size = self[1]:getSize()
+    self.dimen = Geom:new{ x = x, y = y, w = size.w, h = size.h }
+    local band_w = size.w - 2 * self.border
+    local band_y = y + size.h - self.border - self.band_h
+    bb:darkenRect(x + self.border, band_y, band_w, self.band_h, OVERLAY_DARKEN)
+    local label_size = self.label:getSize()
+    self.label:paintTo(bb, x + math.floor((size.w - label_size.w) / 2),
+        band_y + math.floor((self.band_h - label_size.h) / 2))
+end
+
 local AuthorTile = InputContainer:extend{
     entry = nil,
     menu = nil,
@@ -128,13 +176,16 @@ function AuthorTile:init()
     }
 
     local border = Size.border.thin
+    local overlay = self.menu.name_position == "on_photo"
     -- Every tile reserves the same one-line name area, so photos and names
-    -- line up across a row whatever the name's length.
+    -- line up across a row whatever the name's length. On an overlay, the
+    -- photo takes the whole tile instead.
     local name_h = TextWidget:new{
         text = "Ag", face = Font:getFace("cfont", NAME_FONT_SIZE),
     }:getSize().h
     local gap = Screen:scaleBySize(4)
-    local frame_h = self.height - name_h - gap - 2 * border
+    local frame_h = overlay and (self.height - 2 * border)
+        or (self.height - name_h - gap - 2 * border)
     local frame_w = math.min(self.width - 2 * border, math.floor(frame_h * PHOTO_RATIO))
 
     local path = AuthorImages.path(self.entry.text)
@@ -156,25 +207,22 @@ function AuthorTile:init()
         background = Blitbuffer.COLOR_WHITE,
         inner,
     }
-    -- As CoverBrowser does for folder names: decrease the font size until the
-    -- name fits, down to NAME_FONT_MIN; below that it is truncated with "…".
-    local font_size = NAME_FONT_SIZE
-    local label
-    while true do
-        if label then label:free() end
-        local at_min = font_size <= NAME_FONT_MIN
-        label = TextWidget:new{
-            text = self.entry.text,
-            face = Font:getFace("cfont", font_size),
-            -- Measure the whole name; only truncate once at the minimum size.
-            max_width = at_min and self.width or nil,
+    if overlay then
+        local padding = Screen:scaleBySize(OVERLAY_PADDING)
+        self[1] = CenterContainer:new{
+            dimen = Geom:new{ w = self.width, h = self.height },
+            NamedPhoto:new{
+                photo,
+                label = fit_label(self.entry.text, frame_w - 2 * padding, Blitbuffer.COLOR_WHITE),
+                band_h = name_h + 2 * padding,
+                border = border,
+            },
         }
-        if at_min or label:getSize().w <= self.width then break end
-        font_size = font_size - 1
+        return
     end
     local name = CenterContainer:new{
         dimen = Geom:new{ w = self.width, h = name_h },
-        label,
+        fit_label(self.entry.text, self.width),
     }
     self[1] = CenterContainer:new{
         dimen = Geom:new{ w = self.width, h = self.height },
@@ -489,6 +537,30 @@ function M.showAuthors(ui)
         UIManager:show(dialog)
     end
 
+    local function show_name_position_dialog()
+        local dialog
+        local rows = {}
+        local ids = {}
+        for id in pairs(ViewOptions.NAME_POSITIONS) do ids[#ids + 1] = id end
+        table.sort(ids, function(x, y)
+            return ViewOptions.NAME_POSITIONS[x].order < ViewOptions.NAME_POSITIONS[y].order
+        end)
+        for _i, id in ipairs(ids) do
+            rows[#rows + 1] = {{
+                text = ViewOptions.NAME_POSITIONS[id].text .. (options.name_position == id and CHECK or ""),
+                callback = function()
+                    UIManager:close(dialog)
+                    options.name_position = id
+                    menu.name_position = id
+                    ViewOptions.save(options)
+                    menu:updateItems(1, true)
+                end,
+            }}
+        end
+        dialog = ButtonDialog:new{ title = _("Name position"), buttons = rows }
+        UIManager:show(dialog)
+    end
+
     local function show_options_dialog()
         local dialog
         local function names()
@@ -496,33 +568,42 @@ function M.showAuthors(ui)
             for _i, author in ipairs(authors) do list[#list + 1] = author.name end
             return list
         end
-        dialog = ButtonDialog:new{
-            buttons = {
-                {{
-                    text = T(_("Sort by: %1"), ViewOptions.SORTS[options.sort].text:lower())
-                        .. (options.reverse and " " .. _("(reversed)") or "") .. "  \u{25B8}",
-                    callback = function()
-                        UIManager:close(dialog)
-                        show_sort_dialog()
-                    end,
-                }},
-                {{
-                    text = (next(options.filter) and _("Filter (on)") or _("Filter")) .. "  \u{25B8}",
-                    callback = function()
-                        UIManager:close(dialog)
-                        show_filter_dialog()
-                    end,
-                }},
-                {},
-                {{
-                    text = _("Find missing images and information"),
-                    callback = function()
-                        UIManager:close(dialog)
-                        Actions.findAll(names(), refresh)
-                    end,
-                }},
-            },
+        local buttons = {
+            {{
+                text = T(_("Sort by: %1"), ViewOptions.SORTS[options.sort].text:lower())
+                    .. (options.reverse and " " .. _("(reversed)") or "") .. "  \u{25B8}",
+                callback = function()
+                    UIManager:close(dialog)
+                    show_sort_dialog()
+                end,
+            }},
+            {{
+                text = (next(options.filter) and _("Filter (on)") or _("Filter")) .. "  \u{25B8}",
+                callback = function()
+                    UIManager:close(dialog)
+                    show_filter_dialog()
+                end,
+            }},
         }
+        if menu._authors_grid then
+            buttons[#buttons + 1] = {{
+                text = T(_("Name position: %1"),
+                    ViewOptions.NAME_POSITIONS[options.name_position].text:lower()) .. "  \u{25B8}",
+                callback = function()
+                    UIManager:close(dialog)
+                    show_name_position_dialog()
+                end,
+            }}
+        end
+        buttons[#buttons + 1] = {}
+        buttons[#buttons + 1] = {{
+            text = _("Find missing images and information"),
+            callback = function()
+                UIManager:close(dialog)
+                Actions.findAll(names(), refresh)
+            end,
+        }}
+        dialog = ButtonDialog:new{ buttons = buttons }
         UIManager:show(dialog)
     end
 
@@ -555,6 +636,8 @@ function M.showAuthors(ui)
         fields.onCloseWidget = nil -- no covers or background jobs to clean up
         fields._recalculateDimen = cb.MosaicMenu._recalculateDimen
         fields._updateItemsBuildUI = build_author_grid
+        fields._authors_grid = true
+        fields.name_position = options.name_position
     end
     menu = Menu:new(fields)
     menu.close_callback = function() UIManager:close(menu) end

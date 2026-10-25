@@ -29,9 +29,11 @@ Browse your library by author, with a photo and a short bio of each author.
     - **New** / **Reading:** authors with a book that is new or in progress.
     - **Read:** authors with at least one finished book.
     - **Unread:** authors with no finished book at all.
+  - **Name position** (in the grid): below the photo, or on the photo in
+    white on a darkened band across its bottom.
   - **Find missing images and information** for the authors shown.
 
-  The sort order and filters are remembered for next time, as KOReader does
+  These choices are remembered for next time, as KOReader does
   for Collections.
 
 Books with several authors are listed under each of them.

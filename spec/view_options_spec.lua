@@ -166,16 +166,20 @@ describe("authors view options", function()
     end)
 
     it("remembers the last sort and filters, dropping options no longer offered", function()
-        assert.are.same({ sort = "first_name", reverse = false, filter = {} }, ViewOptions.load())
-        ViewOptions.save({ sort = "books", reverse = true, filter = { keywords = "Fantasy", status = { unread = true } } })
+        assert.are.same({ sort = "first_name", reverse = false, filter = {}, name_position = "below" },
+            ViewOptions.load())
+        ViewOptions.save({ sort = "books", reverse = true, name_position = "on_photo",
+            filter = { keywords = "Fantasy", status = { unread = true } } })
         local loaded = ViewOptions.load()
         assert.are.equal("books", loaded.sort)
         assert.is_true(loaded.reverse)
+        assert.are.equal("on_photo", loaded.name_position)
         assert.are.equal("Unread · Keywords: Fantasy", ViewOptions.describe(loaded.filter))
 
         saved.author_info_view = { sort = "name", filter = { series = "Discworld",
             status = { abandoned = true, complete = true, read = true } } }
-        assert.are.same({ sort = "first_name", reverse = false, filter = { status = { read = true } } },
+        assert.are.same({ sort = "first_name", reverse = false, filter = { status = { read = true } },
+                name_position = "below" },
             ViewOptions.load())
 
         local filter = {}
