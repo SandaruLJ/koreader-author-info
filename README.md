@@ -15,8 +15,9 @@ Browse your library by author, with a photo and a short bio of each author.
 - **About this author** shows their years, country, a short bio, genres and
   notable works.
 - The **☰ button** has:
-  - **Sort by:** name, last name, number of books or recently read,
-    optionally reversed. For last name, the family name from Wikidata is
+  - **Sort by:** first name, last name, number of books or recently read,
+    optionally reversed. For first name, a name written "Le Guin, Ursula K."
+    is read as "Ursula K. Le Guin". For last name, the family name from Wikidata is
     used when the author's name contains it ("Liu Cixin" → Liu). Otherwise a
     name written "Le Guin, Ursula K." sorts by the part before the comma,
     and other names by the last word together with particles before it

@@ -45,7 +45,7 @@ describe("authors view options", function()
     local statuses = { ["/a"] = "complete", ["/b"] = "new", ["/c"] = "reading", ["/d"] = "abandoned", ["/e"] = "new" }
     local function status_of(path) return statuses[path] end
 
-    it("sorts by name, last name, number of books and recent reading", function()
+    it("sorts by first name, last name, number of books and recent reading", function()
         local authors = function()
             return {
                 { name = "Terry Pratchett", files = { "/a", "/b", "/c" } },
@@ -53,16 +53,17 @@ describe("authors view options", function()
                 { name = "Neil Gaiman", files = { "/a", "/e" } },
             }
         end
-        assert.are.same({ "Le Guin, Ursula K.", "Neil Gaiman", "Terry Pratchett" },
-            names(ViewOptions.sort(authors(), { sort = "name" })))
+        -- First name reads "Le Guin, Ursula K." as "Ursula K. Le Guin".
+        assert.are.same({ "Neil Gaiman", "Terry Pratchett", "Le Guin, Ursula K." },
+            names(ViewOptions.sort(authors(), { sort = "first_name" })))
         assert.are.same({ "Neil Gaiman", "Le Guin, Ursula K.", "Terry Pratchett" },
             names(ViewOptions.sort(authors(), { sort = "last_name" })))
         assert.are.same({ "Terry Pratchett", "Neil Gaiman", "Le Guin, Ursula K." },
             names(ViewOptions.sort(authors(), { sort = "books" })))
         assert.are.same({ "Le Guin, Ursula K.", "Neil Gaiman", "Terry Pratchett" },
             names(ViewOptions.sort(authors(), { sort = "recent" }, { ["/d"] = 300, ["/e"] = 200, ["/a"] = 100 })))
-        assert.are.same({ "Terry Pratchett", "Neil Gaiman", "Le Guin, Ursula K." },
-            names(ViewOptions.sort(authors(), { sort = "name", reverse = true })))
+        assert.are.same({ "Le Guin, Ursula K.", "Terry Pratchett", "Neil Gaiman" },
+            names(ViewOptions.sort(authors(), { sort = "first_name", reverse = true })))
     end)
 
     it("finds surnames with particles and suffixes", function()
@@ -165,16 +166,16 @@ describe("authors view options", function()
     end)
 
     it("remembers the last sort and filters, dropping options no longer offered", function()
-        assert.are.same({ sort = "name", reverse = false, filter = {} }, ViewOptions.load())
+        assert.are.same({ sort = "first_name", reverse = false, filter = {} }, ViewOptions.load())
         ViewOptions.save({ sort = "books", reverse = true, filter = { keywords = "Fantasy", status = { unread = true } } })
         local loaded = ViewOptions.load()
         assert.are.equal("books", loaded.sort)
         assert.is_true(loaded.reverse)
         assert.are.equal("Unread · Keywords: Fantasy", ViewOptions.describe(loaded.filter))
 
-        saved.author_info_view = { sort = "first_name", filter = { series = "Discworld",
+        saved.author_info_view = { sort = "name", filter = { series = "Discworld",
             status = { abandoned = true, complete = true, read = true } } }
-        assert.are.same({ sort = "name", reverse = false, filter = { status = { read = true } } },
+        assert.are.same({ sort = "first_name", reverse = false, filter = { status = { read = true } } },
             ViewOptions.load())
 
         local filter = {}

@@ -17,6 +17,7 @@ local ffiUtil = require("ffi/util")
 local _ = require("gettext")
 local T = ffiUtil.template
 
+local AuthorImages = require("authorinfo/author_images")
 local AuthorIndex = require("authorinfo/author_index")
 
 local M = {}
@@ -58,7 +59,7 @@ function M.load()
         if type(saved_filter[prop]) == "string" then filter[prop] = saved_filter[prop] end
     end
     return {
-        sort = M.SORTS[saved.sort] and saved.sort or "name",
+        sort = M.SORTS[saved.sort] and saved.sort or "first_name",
         reverse = saved.reverse == true,
         filter = filter,
     }
@@ -321,10 +322,17 @@ end
 
 -- Each sort orders the authors list ({name, files}); "reverse" flips it.
 M.SORTS = {
-    name = {
-        text = _("Name"),
+    first_name = {
+        text = _("First name"),
         order = 1,
-        less = function(a, b) return ffiUtil.strcoll(a.name, b.name) end,
+        -- The name in "First Last" order: "Le Guin, Ursula K." sorts as
+        -- "Ursula K. Le Guin"; other names as they are written.
+        less = function(a, b)
+            local ka = AuthorImages.queryName(a.name):lower()
+            local kb = AuthorImages.queryName(b.name):lower()
+            if ka ~= kb then return ffiUtil.strcoll(ka, kb) end
+            return ffiUtil.strcoll(a.name, b.name)
+        end,
     },
     last_name = {
         text = _("Last name"),
@@ -392,7 +400,7 @@ function M.sort(authors, options, read_times, infoOf)
             return ffiUtil.strcoll(a.name, b.name)
         end
     end
-    less = less or M.SORTS.name.less
+    less = less or M.SORTS.first_name.less
     if options.reverse then
         local forward = less
         less = function(a, b) return forward(b, a) end
