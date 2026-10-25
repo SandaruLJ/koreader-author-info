@@ -9,8 +9,22 @@ Browse your library by author, with a photo of each author.
   KOReader's standard list.
 - **Tap an author** to see their books in the file browser's display style.
   The back arrow returns to the authors.
-- **Hold an author** to find, replace or remove their photo. The ☰ button
-  finds photos for every author who doesn't have one yet.
+- **Hold an author** to find, replace or remove their photo.
+- The **☰ button** has:
+  - **Sort by:** name, last name, number of books or recently read,
+    optionally reversed. Last name is the part before a comma ("Le Guin,
+    Ursula K."), otherwise the last word, so "Ursula K. Le Guin" sorts
+    under G.
+  - **Filter:** by language or keywords, as in Collections: an author is
+    shown when any of their books match, and only the matching books are
+    listed when you tap them. And by status:
+    - **New** / **Reading:** authors with a book that is new or in progress.
+    - **Read:** authors with at least one finished book.
+    - **Unread:** authors with no finished book at all.
+  - **Find missing author images** for the authors shown.
+
+  The sort order and filters are remembered for next time, as KOReader does
+  for Collections.
 
 Books with several authors are listed under each of them.
 

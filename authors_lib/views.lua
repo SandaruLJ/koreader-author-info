@@ -42,6 +42,7 @@ local Screen = Device.screen
 local AuthorIndex = require("authors_lib/author_index")
 local AuthorImages = require("authors_lib/author_images")
 local Actions = require("authors_lib/actions")
+local ViewOptions = require("authors_lib/view_options")
 
 local M = {}
 
@@ -315,15 +316,51 @@ local function author_items(authors)
     return items
 end
 
+local CHECK = " \u{2713}" -- as Collections marks a checked filter
+
+-- showPropValues(books, prop, on_pick): the values of one metadata field
+-- among the given books, with counts, in a list like Collections' "filter by"
+-- list. Picking one calls on_pick(value).
+local function show_prop_values(books, prop, on_pick)
+    local list
+    local items = {}
+    for _i, entry in ipairs(ViewOptions.valueCounts(books, prop)) do
+        items[#items + 1] = {
+            text = entry.value,
+            mandatory = tostring(entry.count),
+            callback = function()
+                UIManager:close(list)
+                on_pick(entry.value)
+            end,
+        }
+    end
+    if #items == 0 then
+        UIManager:show(InfoMessage:new{
+            text = T(_("None of these books has any %1."), ViewOptions.propText(prop):lower()),
+            timeout = 3,
+        })
+        return
+    end
+    list = Menu:new{
+        title = T("%1 (%2)", ViewOptions.propText(prop), #items),
+        item_table = items,
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        title_bar_fm_style = true,
+    }
+    UIManager:show(list)
+end
+
 function M.showAuthors(ui)
-    local authors = AuthorIndex.getAuthors()
-    if authors == nil then
+    local books = AuthorIndex.getBooks()
+    if books == nil then
         UIManager:show(InfoMessage:new{
             text = _("Authors needs KOReader's Cover browser plugin, which reads your books' metadata."),
         })
         return
     end
-    if #authors == 0 then
+    if #AuthorIndex.getAuthors(books) == 0 then
         UIManager:show(InfoMessage:new{
             text = _("No authors found yet.\n\nKOReader learns your books' authors when it shows their covers in the file browser."),
         })
@@ -332,38 +369,161 @@ function M.showAuthors(ui)
 
     local cb = coverbrowser()
     local mode = display_mode(cb)
-    local menu
+    local options = ViewOptions.load()
+    local menu, authors
+
+    local function build_items()
+        authors = ViewOptions.filterAuthors(books, options.filter)
+        ViewOptions.sort(authors, options)
+        return author_items(authors)
+    end
+    local function subtitle()
+        local count = T(N_("1 author", "%1 authors", #authors), #authors)
+        local filtered = ViewOptions.describe(options.filter)
+        return filtered and (count .. " · " .. filtered) or count
+    end
+    -- Saves the options and redraws the list from the top.
+    local function apply()
+        ViewOptions.save(options)
+        local items = build_items()
+        menu:switchItemTable(nil, items, 1, nil, subtitle())
+    end
     local function refresh()
         if menu then menu:updateItems(1, true) end
     end
-    local function names()
-        local list = {}
-        for _i, author in ipairs(authors) do list[#list + 1] = author.name end
-        return list
+
+    local function show_sort_dialog()
+        local dialog
+        local rows = {}
+        local ids = {}
+        for id in pairs(ViewOptions.SORTS) do ids[#ids + 1] = id end
+        table.sort(ids, function(x, y) return ViewOptions.SORTS[x].order < ViewOptions.SORTS[y].order end)
+        for _i, id in ipairs(ids) do
+            rows[#rows + 1] = {{
+                text = ViewOptions.SORTS[id].text .. (options.sort == id and CHECK or ""),
+                callback = function()
+                    UIManager:close(dialog)
+                    options.sort = id
+                    apply()
+                end,
+            }}
+        end
+        rows[#rows + 1] = {}
+        rows[#rows + 1] = {{
+            text = _("Reverse order") .. (options.reverse and CHECK or ""),
+            callback = function()
+                UIManager:close(dialog)
+                options.reverse = not options.reverse
+                apply()
+            end,
+        }}
+        dialog = ButtonDialog:new{ title = _("Sort authors by"), buttons = rows }
+        UIManager:show(dialog)
     end
-    local fields = {
-        name = "authors",
-        title = _("Authors"),
-        subtitle = T(N_("1 author", "%1 authors", #authors), #authors),
-        item_table = author_items(authors),
-        covers_fullscreen = true,
-        is_borderless = true,
-        is_popout = false,
-        title_bar_fm_style = true,
-        title_bar_left_icon = "appbar.menu",
-        onLeftButtonTap = function()
-            local dialog
-            dialog = ButtonDialog:new{
-                buttons = {{{
+
+    local function show_filter_dialog()
+        local filter = options.filter
+        local dialog
+        local function status_button(status)
+            local checked = filter.status and filter.status[status]
+            return {
+                text = ViewOptions.statusText(status) .. (checked and CHECK or ""),
+                callback = function()
+                    UIManager:close(dialog)
+                    ViewOptions.toggleStatus(filter, status)
+                    apply()
+                end,
+            }
+        end
+        local function prop_button(prop)
+            return {
+                text = ViewOptions.propText(prop) .. (filter[prop] and CHECK or ""),
+                callback = function()
+                    UIManager:close(dialog)
+                    if filter[prop] then
+                        filter[prop] = nil
+                        apply()
+                        return
+                    end
+                    -- Offer the values among the books the other filters keep.
+                    show_prop_values(ViewOptions.keptBooks(books, filter), prop, function(value)
+                        filter[prop] = value
+                        apply()
+                    end)
+                end,
+            }
+        end
+        dialog = ButtonDialog:new{
+            title = _("Filter authors"),
+            buttons = {
+                { status_button("new"), status_button("reading") },
+                { status_button("unread"), status_button("read") },
+                {},
+                { prop_button("language"), prop_button("keywords") },
+                {},
+                {{
+                    text = _("Reset all filters"),
+                    enabled = next(filter) ~= nil,
+                    callback = function()
+                        UIManager:close(dialog)
+                        options.filter = {}
+                        apply()
+                    end,
+                }},
+            },
+        }
+        UIManager:show(dialog)
+    end
+
+    local function show_options_dialog()
+        local dialog
+        local function names()
+            local list = {}
+            for _i, author in ipairs(authors) do list[#list + 1] = author.name end
+            return list
+        end
+        dialog = ButtonDialog:new{
+            buttons = {
+                {{
+                    text = T(_("Sort by: %1"), ViewOptions.SORTS[options.sort].text:lower())
+                        .. (options.reverse and " " .. _("(reversed)") or "") .. "  \u{25B8}",
+                    callback = function()
+                        UIManager:close(dialog)
+                        show_sort_dialog()
+                    end,
+                }},
+                {{
+                    text = (next(options.filter) and _("Filter (on)") or _("Filter")) .. "  \u{25B8}",
+                    callback = function()
+                        UIManager:close(dialog)
+                        show_filter_dialog()
+                    end,
+                }},
+                {},
+                {{
                     text = _("Find missing author images"),
                     callback = function()
                         UIManager:close(dialog)
                         Actions.findAll(names(), refresh)
                     end,
-                }}},
-            }
-            UIManager:show(dialog)
-        end,
+                }},
+            },
+        }
+        UIManager:show(dialog)
+    end
+
+    local items = build_items()
+    local fields = {
+        name = "authors",
+        title = _("Authors"),
+        subtitle = subtitle(),
+        item_table = items,
+        covers_fullscreen = true,
+        is_borderless = true,
+        is_popout = false,
+        title_bar_fm_style = true,
+        title_bar_left_icon = "appbar.menu",
+        onLeftButtonTap = show_options_dialog,
         onMenuSelect = function(_self, item)
             M.showBooks(ui, item.text, item.files, function() menu.close_callback() end)
         end,
