@@ -284,33 +284,12 @@ function M.familyName(info, name)
     return best
 end
 
--- lifespan(info) -> "1929–2018", "born 1985", or nil.
-function M.lifespan(info)
+-- sourcesText(info) -> where the information came from ("Wikipedia (en),
+-- Wikidata"), or nil.
+function M.sourcesText(info)
     if type(info) ~= "table" then return nil end
-    if info.born and info.died then return info.born .. "–" .. info.died end
-    if info.born then return require("ffi/util").template(require("gettext")("born %1"), info.born) end
-    if info.died then return require("ffi/util").template(require("gettext")("died %1"), info.died) end
-    return nil
-end
-
--- aboutText(info) -> the text of the About view.
-function M.aboutText(info)
     local _ = require("gettext")
     local T = require("ffi/util").template
-    local parts = {}
-    local line = {}
-    if M.lifespan(info) then line[#line + 1] = M.lifespan(info) end
-    if type(info.countries) == "table" and #info.countries > 0 then
-        line[#line + 1] = table.concat(info.countries, ", ")
-    end
-    if #line > 0 then parts[#parts + 1] = table.concat(line, " · ") end
-    if info.bio then parts[#parts + 1] = info.bio end
-    if type(info.genres) == "table" and #info.genres > 0 then
-        parts[#parts + 1] = T(_("Genres: %1"), table.concat(info.genres, ", "))
-    end
-    if type(info.works) == "table" and #info.works > 0 then
-        parts[#parts + 1] = T(_("Notable works: %1"), table.concat(info.works, ", "))
-    end
     local sources = {}
     if info.bio_source == "wikipedia" then
         sources[#sources + 1] = info.wikipedia and info.wikipedia.lang
@@ -319,8 +298,7 @@ function M.aboutText(info)
         sources[#sources + 1] = _("Open Library")
     end
     if info.wikidata then sources[#sources + 1] = _("Wikidata") end
-    if #sources > 0 then parts[#parts + 1] = T(_("Sources: %1"), table.concat(sources, ", ")) end
-    return table.concat(parts, "\n\n")
+    return #sources > 0 and table.concat(sources, ", ") or nil
 end
 
 -- ---------------------------------------------------------------------

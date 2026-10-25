@@ -122,7 +122,8 @@ describe("author info", function()
         assert.are.equal("openlibrary", info.bio_source)
         assert.are.equal("Hector Hugh Munro, better known as Saki, was a British writer whose witty stories "
             .. "satirised Edwardian society.", info.bio)
-        assert.are.equal("1870–1916", AuthorInfo.lifespan(info))
+        assert.are.equal("1870", info.born)
+        assert.are.equal("1916", info.died)
     end)
 
     it("names historical states by the country they are now, once", function()
@@ -193,12 +194,10 @@ describe("author info", function()
         assert.is_nil(AuthorInfo.year("-0500-01-01T00:00:00Z"))
     end)
 
-    it("writes the About text from what is known", function()
-        local text = AuthorInfo.aboutText({ born = "1929", died = "2018", countries = { "United States" },
-            bio = "Bio.", genres = { "fantasy" }, works = { "Earthsea" }, bio_source = "wikipedia",
-            wikipedia = { lang = "en" }, wikidata = "Q1" })
-        assert.are.equal("1929–2018 · United States\n\nBio.\n\nGenres: fantasy\n\nNotable works: Earthsea"
-            .. "\n\nSources: Wikipedia (en), Wikidata", text)
-        assert.are.equal("born 1985", AuthorInfo.lifespan({ born = "1985" }))
+    it("names the sources the information came from", function()
+        assert.are.equal("Wikipedia (en), Wikidata", AuthorInfo.sourcesText({ bio_source = "wikipedia",
+            wikipedia = { lang = "en" }, wikidata = "Q1" }))
+        assert.are.equal("Open Library", AuthorInfo.sourcesText({ bio_source = "openlibrary" }))
+        assert.is_nil(AuthorInfo.sourcesText({}))
     end)
 end)

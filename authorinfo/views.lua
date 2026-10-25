@@ -43,7 +43,6 @@ local Screen = Device.screen
 local AuthorIndex = require("authorinfo/author_index")
 local AuthorImages = require("authorinfo/author_images")
 local Actions = require("authorinfo/actions")
-local AuthorInfo = require("authorinfo/author_info")
 local ViewOptions = require("authorinfo/view_options")
 
 local M = {}
@@ -314,9 +313,9 @@ function M.showBooks(ui, author, files, on_open)
         subtitle = T(N_("1 book", "%1 books", count), count),
         item_table = book_items(files, cb),
         ui = ui,
-        -- About the author, when we have information about them.
-        title_bar_left_icon = AuthorInfo.has(author) and "info" or nil,
-        onLeftButtonTap = function() Actions.showAbout(author) end,
+        -- Author information, as Book information is for a book.
+        title_bar_left_icon = "info",
+        onLeftButtonTap = function() Actions.showDetails(author, count) end,
         onReturn = function() books.close_callback() end,
         onMenuSelect = function(_self, item)
             filemanagerutil.openFile(ui, item.file, function()
@@ -624,7 +623,8 @@ function M.showAuthors(ui)
         end,
         onMenuHold = function(_self, item)
             local dialog
-            local rows = Actions.holdButtons(item.text, function() UIManager:close(dialog) end, refresh)
+            local rows = Actions.holdButtons(item.text, function() UIManager:close(dialog) end, refresh,
+                #item.files)
             if #rows == 0 then return true end
             dialog = ButtonDialog:new{ title = item.text, buttons = rows }
             UIManager:show(dialog)

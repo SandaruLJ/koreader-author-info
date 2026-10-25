@@ -7,7 +7,8 @@
 --   findAll(names, on_done)   -- every author missing a photo or information,
 --                                after a confirm that says how many.
 --   remove(name, on_done)     -- an author's hold menu, when a photo is set.
---   showAbout(name)           -- the author's information, in a text viewer.
+--   showDetails(name, count)  -- "Author information", laid out like
+--                                KOReader's "Book information".
 --
 -- Lookups wait for Wi-Fi the KOReader way (runWhenOnline asks; nothing
 -- connects by itself) and run each author in a forked child, so the UI keeps
@@ -265,33 +266,70 @@ function M.remove(name, on_done)
     if images().remove(name) then notify(on_done) end
 end
 
--- showAbout(name) -> true when there was information to show.
-function M.showAbout(name)
-    local info = infos().load(name)
-    if not info then return false end
-    UIManager:show(require("ui/widget/textviewer"):new{
-        title = name,
-        text = infos().aboutText(info),
-    })
-    return true
+local function list(values)
+    return type(values) == "table" and #values > 0 and table.concat(values, ", ") or nil
 end
 
--- holdButtons(name, close_dialog, on_done) -> ButtonDialog rows for an
--- author's hold menu.
-function M.holdButtons(name, close_dialog, on_done)
+-- showDetails(name, book_count): "Author information", built like KOReader's
+-- "Book information": a key/value page, the photo behind "Tap to display" as
+-- the cover image is, and the bio opening in a text viewer as the
+-- description does. Long values show in full when tapped.
+function M.showDetails(name, book_count)
+    local info = infos().load(name) or {}
+    local photo = images().path(name)
+    local n_a = _("N/A")
+    local kv_pairs = {
+        { _("Photo:"), photo and _("Tap to display") or n_a,
+            callback = photo and function()
+                UIManager:show(require("ui/widget/imageviewer"):new{
+                    file = photo,
+                    with_title_bar = false,
+                    fullscreen = true,
+                })
+            end or nil,
+            separator = true,
+        },
+        { _("Name:"), name },
+        { _("Born:"), info.born or n_a },
+        { _("Died:"), info.died or n_a },
+        { _("Country:"), list(info.countries) or n_a },
+        { _("Genres:"), list(info.genres) or n_a },
+        { _("Notable works:"), list(info.works) or n_a },
+        { _("Bio:"), info.bio or n_a,
+            callback = info.bio and function()
+                UIManager:show(require("ui/widget/textviewer"):new{
+                    title = _("Bio"),
+                    text = info.bio,
+                    text_type = "book_info",
+                })
+            end or nil,
+            separator = true,
+        },
+    }
+    if book_count then
+        kv_pairs[#kv_pairs + 1] = { _("Books in library:"), tostring(book_count) }
+    end
+    kv_pairs[#kv_pairs + 1] = { _("Sources:"), infos().sourcesText(info) or n_a }
+    UIManager:show(require("ui/widget/keyvaluepage"):new{
+        title = _("Author information"),
+        value_overflow_align = "right",
+        kv_pairs = kv_pairs,
+    })
+end
+
+-- holdButtons(name, close_dialog, on_done, book_count) -> ButtonDialog rows
+-- for an author's hold menu.
+function M.holdButtons(name, close_dialog, on_done, book_count)
     if type(name) ~= "string" or name == "" or images().isPlaceholder(name) then
         return {}
     end
-    local rows = {}
-    if infos().has(name) then
-        rows[#rows + 1] = {{
-            text = _("About this author"),
-            callback = function()
-                close_dialog()
-                M.showAbout(name)
-            end,
-        }}
-    end
+    local rows = {{{
+        text = _("Author information"),
+        callback = function()
+            close_dialog()
+            M.showDetails(name, book_count)
+        end,
+    }}}
     local has_photo = images().has(name)
     rows[#rows + 1] = {{
         text = has_photo and _("Replace author image online") or _("Find author image online"),

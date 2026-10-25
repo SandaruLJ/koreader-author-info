@@ -8,12 +8,13 @@ Browse your library by author, with a photo and a short bio of each author.
   each author's photo and name. In list or classic modes they appear in
   KOReader's standard list.
 - **Tap an author** to see their books in the file browser's display style.
-  The back arrow returns to the authors, and the ⓘ button shows **About
-  this author**.
-- **Hold an author** for **About this author**, or to find, replace or
+  The back arrow returns to the authors, and the ⓘ button shows **Author
+  information**.
+- **Hold an author** for **Author information**, or to find, replace or
   remove their photo and information.
-- **About this author** shows their years, country, a short bio, genres and
-  notable works.
+- **Author information** is laid out like KOReader's Book information: the
+  photo (tap to display), name, years, country, genres, notable works, bio
+  (tap to read), number of books in the library, and sources.
 - The **☰ button** has:
   - **Sort by:** first name, last name, number of books or recently read,
     optionally reversed. For first name, a name written "Le Guin, Ursula K."
