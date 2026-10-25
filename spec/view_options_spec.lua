@@ -177,7 +177,7 @@ describe("authors view options", function()
         assert.are.equal("on_photo", loaded.name_position)
         assert.are.equal("Unread · Keywords: Fantasy", ViewOptions.describe(loaded.filter))
 
-        saved.author_info_view = { sort = "name", filter = { series = "Discworld",
+        saved.authorinfo_view = { sort = "name", filter = { series = "Discworld",
             status = { abandoned = true, complete = true, read = true } } }
         assert.are.same({ sort = "first_name", reverse = false, filter = { status = { read = true } },
                 name_position = "below" },

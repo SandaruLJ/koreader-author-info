@@ -49,7 +49,7 @@ Books with several authors are listed under each of them.
 - Photos come from Open Library, or from Wikipedia when Open Library has
   none. A Wikipedia page is used only if its description says the person is
   a writer. Nothing is downloaded unless you ask.
-- Photos are saved in `koreader/author-info/<Author Name>.jpg`. You can put
+- Photos are saved in `koreader/authorinfo/<Author Name>.jpg`. You can put
   your own JPEG or PNG there under the same name.
 - Author information starts from the same Open Library match. Details
   (names, country, years, genres, notable works) come from Wikidata, with
@@ -59,11 +59,11 @@ Books with several authors are listed under each of them.
   named by today's country (e.g. "United Kingdom of Great Britain and
   Ireland" → United Kingdom) where that is unambiguous.
 - Information is saved beside the photo, in
-  `koreader/author-info/<Author Name>.json`.
+  `koreader/authorinfo/<Author Name>.json`.
 
 ## Install
 
-Copy this folder into KOReader's `plugins` folder as `author-info.koplugin`.
+Copy this folder into KOReader's `plugins` folder as `authorinfo.koplugin`.
 Requires the Cover browser plugin (bundled with KOReader).
 
 ## Credits and license

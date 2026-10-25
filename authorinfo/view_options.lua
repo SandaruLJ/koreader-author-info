@@ -23,7 +23,7 @@ local AuthorIndex = require("authorinfo/author_index")
 
 local M = {}
 
-local SETTINGS_KEY = "author_info_view"
+local SETTINGS_KEY = "authorinfo_view"
 
 M.STATUSES = { "new", "reading", "unread", "read" }
 M.PROPS = { "language", "keywords" }

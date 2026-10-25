@@ -10,7 +10,7 @@ local Dispatcher = require("dispatcher")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
 local _ = require("gettext")
 
--- Lists "author_info" right before "favorites" in the main menu tab of the
+-- Lists "authorinfo" right before "favorites" in the main menu tab of the
 -- file browser and the reader, as KOReader lists its own entries. (A plugin's
 -- entry not in these lists goes at the end of the tab its sorting_hint names.)
 local function place_before_favorites(order_module)
@@ -18,11 +18,11 @@ local function place_before_favorites(order_module)
     local main = ok and type(order) == "table" and order.main
     if type(main) ~= "table" then return end
     for _i, id in ipairs(main) do
-        if id == "author_info" then return end
+        if id == "authorinfo" then return end
     end
     for i, id in ipairs(main) do
         if id == "favorites" then
-            table.insert(main, i, "author_info")
+            table.insert(main, i, "authorinfo")
             return
         end
     end
@@ -31,12 +31,12 @@ place_before_favorites("ui/elements/filemanager_menu_order")
 place_before_favorites("ui/elements/reader_menu_order")
 
 local AuthorInfo = WidgetContainer:extend{
-    name = "author-info",
+    name = "authorinfo",
     is_doc_only = false,
 }
 
 function AuthorInfo:onDispatcherRegisterActions()
-    Dispatcher:registerAction("author_info_show_authors", {
+    Dispatcher:registerAction("authorinfo_show_authors", {
         category = "none",
         event = "AuthorInfoShowAuthors",
         title = _("Authors"),
@@ -50,7 +50,7 @@ function AuthorInfo:init()
 end
 
 function AuthorInfo:addToMainMenu(menu_items)
-    menu_items.author_info = {
+    menu_items.authorinfo = {
         text = _("Authors"),
         sorting_hint = "main",
         callback = function() self:onAuthorInfoShowAuthors() end,

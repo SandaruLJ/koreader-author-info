@@ -16,7 +16,7 @@
 --      (writer)" and so on), and only when the page's short description says
 --      the person writes: never a footballer of the same name.
 --
--- Photos are saved as <data dir>/author-info/<author>.jpg, beside the
+-- Photos are saved as <data dir>/authorinfo/<author>.jpg, beside the
 -- author's information (author_info). A picture
 -- placed there by hand (jpg, jpeg or png) is used the same way.
 --
@@ -217,7 +217,7 @@ local dir_override
 function M.dir()
     if dir_override then return dir_override end
     local DataStorage = require("datastorage")
-    return DataStorage:getDataDir() .. "/author-info"
+    return DataStorage:getDataDir() .. "/authorinfo"
 end
 
 -- For specs: point the store somewhere disposable.

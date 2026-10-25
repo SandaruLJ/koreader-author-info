@@ -6,7 +6,7 @@ local json = require("json")
 local logger = require("logger")
 
 local M = {}
-local USER_AGENT = "KOReader-AuthorInfo-plugin/1.0 (KOReader author-info plugin)"
+local USER_AGENT = "KOReader-AuthorInfo-plugin/1.0 (KOReader authorinfo plugin)"
 local BLOCK_TIMEOUT = 6
 local TOTAL_TIMEOUT = 12
 local MAX_RESPONSE_BYTES = 2 * 1024 * 1024

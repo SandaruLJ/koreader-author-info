@@ -1,6 +1,6 @@
 -- What we know about an author besides their photo: a short bio, their
 -- country, birth and death years, given and family names, genres and notable
--- works. Saved as <data dir>/author-info/<author>.json, beside their photo
+-- works. Saved as <data dir>/authorinfo/<author>.json, beside their photo
 -- (author_images), one file per author,
 -- so each lookup (a forked child) writes only its own file.
 --
@@ -79,7 +79,7 @@ local dir_override
 
 function M.dir()
     if dir_override then return dir_override end
-    return require("datastorage"):getDataDir() .. "/author-info"
+    return require("datastorage"):getDataDir() .. "/authorinfo"
 end
 
 -- For specs: point the store somewhere disposable.
