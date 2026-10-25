@@ -16,7 +16,8 @@
 --      (writer)" and so on), and only when the page's short description says
 --      the person writes: never a footballer of the same name.
 --
--- Photos are saved as <data dir>/author-info/<author>.jpg. A picture
+-- Photos are saved as <data dir>/author-info/<author>.jpg, beside the
+-- author's information (author_info). A picture
 -- placed there by hand (jpg, jpeg or png) is used the same way.
 --
 -- Placeholder names (Anonymous, Various, Unknown) are never looked up: both
@@ -35,7 +36,7 @@ local OL_PHOTO = "https://covers.openlibrary.org/a/olid/%s-L.jpg?default=false"
 local WP_HOST = "en.wikipedia.org"
 local WP_API = "https://en.wikipedia.org/w/api.php?action=query&format=json"
     .. "&formatversion=2&redirects=1&prop=pageimages%7Cdescription%7Cpageprops"
-    .. "&ppprop=disambiguation&piprop=thumbnail&pithumbsize=500&titles="
+    .. "&ppprop=disambiguation%7Cwikibase_item&piprop=thumbnail&pithumbsize=500&titles="
 -- Hosts Wikipedia serves lead-image thumbnails from.
 local WP_IMAGE_HOSTS = { "thumb.wikimedia.org", "upload.wikimedia.org" }
 local JSON_HEADERS = { ["Accept"] = "application/json" }
@@ -180,10 +181,9 @@ local function wikimedia_host(url)
     return nil
 end
 
--- pickWikipedia(response) -> thumbnail url, page title | nil. The page must
--- exist, not be a disambiguation page, describe a writer, and have a lead
--- image served from Wikimedia.
-function M.pickWikipedia(response)
+-- writerPage(response) -> the page of a query for one title when it exists,
+-- is not a disambiguation page, and describes a writer; nil otherwise.
+function M.writerPage(response)
     local pages = type(response) == "table" and type(response.query) == "table"
         and response.query.pages
     if type(pages) ~= "table" then return nil end
@@ -191,11 +191,19 @@ function M.pickWikipedia(response)
         if type(page) == "table" and not page.missing and not page.invalid
                 and not (type(page.pageprops) == "table"
                     and page.pageprops.disambiguation ~= nil)
-                and is_writer(page.description)
-                and type(page.thumbnail) == "table"
-                and wikimedia_host(page.thumbnail.source) then
-            return page.thumbnail.source, page.title
+                and is_writer(page.description) then
+            return page
         end
+    end
+    return nil
+end
+
+-- pickWikipedia(response) -> thumbnail url, page title | nil: the writer's
+-- page when it has a lead image served from Wikimedia.
+function M.pickWikipedia(response)
+    local page = M.writerPage(response)
+    if page and type(page.thumbnail) == "table" and wikimedia_host(page.thumbnail.source) then
+        return page.thumbnail.source, page.title
     end
     return nil
 end
@@ -327,41 +335,69 @@ local function answered(data, err)
     return data ~= nil or (type(err) == "table" and err.status ~= nil)
 end
 
--- findOpenLibrary(name, transport) -> url | nil, answered. The url may still
--- 404: Open Library knows many authors it has no photo of.
-function M.findOpenLibrary(name, transport)
+-- One author's lookup may ask for the photo and the information (see
+-- author_info). Both start from the same Open Library search and Wikipedia
+-- page, so they share them through a session table: pass the same table as
+-- opts.session to both. Without one, nothing is remembered.
+
+-- searchOpenLibrary(name, transport, session) -> the matching author's search
+-- result (see pickOpenLibrary) | nil, answered
+function M.searchOpenLibrary(name, transport, session)
+    local memo = session and session.openlibrary
+    if memo then return memo.doc, memo.answered end
     local data, err = Http.getJson(OL_SEARCH .. escape(M.queryName(name)),
         OL_HOST, JSON_HEADERS, transport)
-    if type(data) ~= "table" then return nil, answered(data, err) end
-    local doc = M.pickOpenLibrary(data.docs, name)
-    local olid = doc and doc.key:match("([^/]+)$")
-    if olid and olid:match("^OL%d+A$") then
-        return string.format(OL_PHOTO, olid), true
+    local doc, any_answer
+    if type(data) == "table" then
+        doc, any_answer = M.pickOpenLibrary(data.docs, name), true
+    else
+        any_answer = answered(data, err)
     end
-    return nil, true
+    if session then session.openlibrary = { doc = doc, answered = any_answer } end
+    return doc, any_answer
 end
 
--- findWikipedia(name, transport) -> url | nil, answered. Each suffixed title
--- is tried only when the one before found nothing that describes a writer.
-function M.findWikipedia(name, transport)
+-- openLibraryId(doc) -> "OL123A" | nil
+function M.openLibraryId(doc)
+    local olid = type(doc) == "table" and type(doc.key) == "string" and doc.key:match("([^/]+)$")
+    return olid and olid:match("^OL%d+A$") and olid or nil
+end
+
+-- findOpenLibrary(name, transport, session) -> url | nil, answered. The url
+-- may still 404: Open Library knows many authors it has no photo of.
+function M.findOpenLibrary(name, transport, session)
+    local doc, any_answer = M.searchOpenLibrary(name, transport, session)
+    local olid = M.openLibraryId(doc)
+    if olid then return string.format(OL_PHOTO, olid), true end
+    return nil, any_answer
+end
+
+-- findWikipediaPage(name, transport, session) -> the writer's English
+-- Wikipedia page (title, description, thumbnail, pageprops.wikibase_item) |
+-- nil, answered. Each suffixed title is tried only when the one before found
+-- no page describing a writer.
+function M.findWikipediaPage(name, transport, session)
+    local memo = session and session.wikipedia
+    if memo then return memo.page, memo.answered end
     local query = M.queryName(name)
-    local any_answer = false
+    local any_answer, found = false, nil
     for _i, title in ipairs({ query, query .. " (writer)", query .. " (author)",
             query .. " (novelist)" }) do
         local data, err = Http.getJson(WP_API .. escape(title), WP_HOST,
             JSON_HEADERS, transport)
         any_answer = any_answer or answered(data, err)
-        if type(data) == "table" then
-            local url = M.pickWikipedia(data)
-            if url then return url, true end
-            -- The page is this writer, just without a picture: the suffixed
-            -- titles would only find someone else.
-            local page = type(data.query) == "table" and type(data.query.pages) == "table"
-                and data.query.pages[1]
-            if type(page) == "table" and not page.missing and is_writer(page.description) then
-                break
-            end
-        end
+        found = type(data) == "table" and M.writerPage(data) or nil
+        if found then break end
+    end
+    if session then session.wikipedia = { page = found, answered = any_answer } end
+    return found, any_answer
+end
+
+-- findWikipedia(name, transport, session) -> photo url | nil, answered
+function M.findWikipedia(name, transport, session)
+    local page, any_answer = M.findWikipediaPage(name, transport, session)
+    if page and type(page.thumbnail) == "table" and wikimedia_host(page.thumbnail.source) then
+        return page.thumbnail.source, true
     end
     return nil, any_answer
 end
@@ -506,7 +542,8 @@ end
 
 -- fetch(name, opts) -> path, source | nil, reason
 -- Finds a photo and saves it, replacing any photo already saved for the
--- author. opts.transport / opts.download_transport stub the network (specs).
+-- author. opts.session shares lookups with author_info; opts.transport and
+-- opts.download_transport stub the network (specs).
 --   source: "openlibrary" | "wikipedia"
 --   reason: "placeholder", "bad name", "no storage", "none" (asked, and
 --           there is no photo), or "unreachable" (no source answered at all)
@@ -518,7 +555,7 @@ function M.fetch(name, opts)
     local dir = M.dir()
     if not ensure_dir(dir) then return nil, "no storage" end
 
-    local url, ol_answered = M.findOpenLibrary(name, opts.transport)
+    local url, ol_answered = M.findOpenLibrary(name, opts.transport, opts.session)
     if url then
         local path = save(url, dir, stem, opts.download_transport)
         if path then
@@ -526,7 +563,7 @@ function M.fetch(name, opts)
             return path, "openlibrary"
         end
     end
-    local wp_url, wp_answered = M.findWikipedia(name, opts.transport)
+    local wp_url, wp_answered = M.findWikipedia(name, opts.transport, opts.session)
     if wp_url then
         local path = save(wp_url, dir, stem, opts.download_transport)
         if path then

@@ -269,18 +269,31 @@ function M.get(url, host, headers, transport, server_retries)
         if not response then return nil, M.transportFailure(err) end
         return response
     end
-    local retries = math.max(0, math.floor(tonumber(server_retries) or 1))
+    local retries = math.max(0, math.floor(tonumber(server_retries) or 2))
     local retry_all_server_errors = server_retries ~= nil
     local response, err
     for attempt = 0, retries do
         response, err = request()
         local status = response and tonumber(response.status)
-        local retryable = status == 503
+        local retryable = status == 503 or status == 429
             or (retry_all_server_errors and status and status >= 500 and status <= 599)
         if not retryable or attempt == retries then break end
-        require("socket").sleep(1)
+        -- Rate limited (Wikimedia does this to quick runs of requests): wait
+        -- as long as the server asks, within reason, then try again.
+        local wait = status == 429
+            and (tonumber(header_value(response.headers, "retry-after")) or 2 * (attempt + 1))
+            or 1
+        M.sleep(math.min(math.max(wait, 1), M.MAX_RETRY_WAIT))
     end
     return response, err
+end
+
+-- Longest wait for a rate-limited request before retrying, in seconds.
+M.MAX_RETRY_WAIT = 10
+
+-- sleep(seconds): replaceable in specs.
+function M.sleep(seconds)
+    require("socket").sleep(seconds)
 end
 
 function M.getJson(url, host, headers, transport)
