@@ -27,7 +27,6 @@ local InputContainer = require("ui/widget/container/inputcontainer")
 local LeftContainer = require("ui/widget/container/leftcontainer")
 local Menu = require("ui/widget/menu")
 local Size = require("ui/size")
-local TextBoxWidget = require("ui/widget/textboxwidget")
 local TextWidget = require("ui/widget/textwidget")
 local UIManager = require("ui/uimanager")
 local VerticalGroup = require("ui/widget/verticalgroup")
@@ -46,12 +45,10 @@ local Actions = require("authors_lib/actions")
 
 local M = {}
 
--- Where an author's name goes on a grid tile: "below" the photo.
-M.LABEL_STYLE = "below"
 -- Photo frame shape (width / height): a portrait, like a book cover.
 local PHOTO_RATIO = 3 / 4
 local NAME_FONT_SIZE = 16
-local NAME_LINES = 2
+local NAME_FONT_MIN = 10 -- CoverBrowser's floor for folder names
 
 -- CoverBrowser's modules, when that plugin is enabled.
 local function coverbrowser()
@@ -129,10 +126,12 @@ function AuthorTile:init()
     }
 
     local border = Size.border.thin
-    local face = Font:getFace("cfont", NAME_FONT_SIZE)
-    local line_h = TextWidget:new{ text = "Ag", face = face }:getSize().h
+    -- Every tile reserves the same one-line name area, so photos and names
+    -- line up across a row whatever the name's length.
+    local name_h = TextWidget:new{
+        text = "Ag", face = Font:getFace("cfont", NAME_FONT_SIZE),
+    }:getSize().h
     local gap = Screen:scaleBySize(4)
-    local name_h = line_h * NAME_LINES
     local frame_h = self.height - name_h - gap - 2 * border
     local frame_w = math.min(self.width - 2 * border, math.floor(frame_h * PHOTO_RATIO))
 
@@ -155,14 +154,25 @@ function AuthorTile:init()
         background = Blitbuffer.COLOR_WHITE,
         inner,
     }
-    local name = TextBoxWidget:new{
-        text = self.entry.text,
-        face = face,
-        width = self.width,
-        height = name_h,
-        height_adjust = true,
-        height_overflow_show_ellipsis = true,
-        alignment = "center",
+    -- As CoverBrowser does for folder names: decrease the font size until the
+    -- name fits, down to NAME_FONT_MIN; below that it is truncated with "…".
+    local font_size = NAME_FONT_SIZE
+    local label
+    while true do
+        if label then label:free() end
+        local at_min = font_size <= NAME_FONT_MIN
+        label = TextWidget:new{
+            text = self.entry.text,
+            face = Font:getFace("cfont", font_size),
+            -- Measure the whole name; only truncate once at the minimum size.
+            max_width = at_min and self.width or nil,
+        }
+        if at_min or label:getSize().w <= self.width then break end
+        font_size = font_size - 1
+    end
+    local name = CenterContainer:new{
+        dimen = Geom:new{ w = self.width, h = name_h },
+        label,
     }
     self[1] = CenterContainer:new{
         dimen = Geom:new{ w = self.width, h = self.height },
