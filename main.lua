@@ -1,8 +1,10 @@
--- Author Info: browse your library by author, with each author's photo.
+-- Author Info: browse your library by author, with each author's photo and
+-- a short bio.
 --
 -- Main menu > Authors (next to History and Collections), or the "Authors"
 -- gesture action, opens a grid of authors in the file browser's display
--- style. Tap an author for their books; hold for photo options.
+-- style. Tap an author for their books; hold for their information and photo
+-- options.
 
 local Dispatcher = require("dispatcher")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")

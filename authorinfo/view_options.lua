@@ -5,6 +5,8 @@
 -- Filters, which all must match:
 --   language, keywords -- one value each; an author is listed when any of
 --                         their books has it, with only those books.
+--   country, genre     -- one value each, from the author's information
+--                         (author_info); all their books are listed.
 --   status             -- a set; an author is listed when any chosen status
 --                         applies:
 --     new, reading     -- has a book with that status (only those listed)
@@ -23,6 +25,9 @@ local SETTINGS_KEY = "author_info_view"
 
 M.STATUSES = { "new", "reading", "unread", "read" }
 M.PROPS = { "language", "keywords" }
+M.AUTHOR_PROPS = { "country", "genre" }
+-- Where an author property's values are in author_info's records.
+local AUTHOR_FIELDS = { country = "countries", genre = "genres" }
 
 local function known(list)
     local set = {}
@@ -47,6 +52,9 @@ function M.load()
         end
     end
     for _i, prop in ipairs(M.PROPS) do
+        if type(saved_filter[prop]) == "string" then filter[prop] = saved_filter[prop] end
+    end
+    for _i, prop in ipairs(M.AUTHOR_PROPS) do
         if type(saved_filter[prop]) == "string" then filter[prop] = saved_filter[prop] end
     end
     return {
@@ -108,12 +116,38 @@ local function book_status(path)
     return require("ui/widget/booklist").getBookStatus(path)
 end
 
--- filterAuthors(books, filter, statusOf) -> the authors to show, each with
--- the books to list for them. statusOf(path) -> "new" | "reading" |
--- "abandoned" | "complete" is for specs.
-function M.filterAuthors(books, filter, statusOf)
+-- authorValues(info, prop) -> an author's values for country or genre.
+function M.authorValues(info, prop)
+    local values = type(info) == "table" and info[AUTHOR_FIELDS[prop]]
+    return type(values) == "table" and values or {}
+end
+
+local function has_value(info, prop, wanted)
+    for _i, value in ipairs(M.authorValues(info, prop)) do
+        if value == wanted then return true end
+    end
+    return false
+end
+
+-- filterAuthors(books, filter, statusOf, infoOf) -> the authors to show,
+-- each with the books to list for them. statusOf(path) -> "new" | "reading" |
+-- "abandoned" | "complete" and infoOf(name) -> author_info record are for
+-- specs.
+function M.filterAuthors(books, filter, statusOf, infoOf)
     filter = filter or {}
     local authors = AuthorIndex.getAuthors(books, props_matcher(filter))
+    if filter.country or filter.genre then
+        infoOf = infoOf or require("authorinfo/author_info").load
+        local kept = {}
+        for _i, author in ipairs(authors) do
+            local info = infoOf(author.name)
+            if (not filter.country or has_value(info, "country", filter.country))
+                    and (not filter.genre or has_value(info, "genre", filter.genre)) then
+                kept[#kept + 1] = author
+            end
+        end
+        authors = kept
+    end
     local wanted = filter.status
     if not wanted then return authors end
 
@@ -155,11 +189,28 @@ function M.filterAuthors(books, filter, statusOf)
     return result
 end
 
--- keptBooks(books, filter, statusOf) -> the books the shown authors list:
--- where the value lists for further filters come from.
-function M.keptBooks(books, filter, statusOf)
+-- authorValueCounts(authors, prop, infoOf) -> { {value, count}, ... }: the
+-- countries or genres of the given authors, counting authors.
+function M.authorValueCounts(authors, prop, infoOf)
+    infoOf = infoOf or require("authorinfo/author_info").load
+    local counts, values = {}, {}
+    for _i, author in ipairs(authors) do
+        for _j, value in ipairs(M.authorValues(infoOf(author.name), prop)) do
+            if not counts[value] then values[#values + 1] = value end
+            counts[value] = (counts[value] or 0) + 1
+        end
+    end
+    table.sort(values, function(a, b) return ffiUtil.strcoll(a, b) end)
+    local result = {}
+    for _i, value in ipairs(values) do result[#result + 1] = { value = value, count = counts[value] } end
+    return result
+end
+
+-- keptBooks(books, filter, statusOf, infoOf) -> the books the shown authors
+-- list: where the value lists for further filters come from.
+function M.keptBooks(books, filter, statusOf, infoOf)
     local kept = {}
-    for _i, author in ipairs(M.filterAuthors(books, filter, statusOf)) do
+    for _i, author in ipairs(M.filterAuthors(books, filter, statusOf, infoOf)) do
         for _j, file in ipairs(author.files) do kept[file] = true end
     end
     local result = {}
@@ -189,6 +240,8 @@ function M.propText(prop)
     return ({
         language = _("Language"),
         keywords = _("Keywords"),
+        country = _("Country"),
+        genre = _("Genre"),
     })[prop]
 end
 
@@ -211,6 +264,9 @@ function M.describe(filter)
             if filter.status[status] then names[#names + 1] = M.statusText(status) end
         end
         parts[#parts + 1] = table.concat(names, ", ")
+    end
+    for _i, prop in ipairs(M.AUTHOR_PROPS) do
+        if filter[prop] then parts[#parts + 1] = T("%1: %2", M.propText(prop), filter[prop]) end
     end
     for _i, prop in ipairs(M.PROPS) do
         if filter[prop] then parts[#parts + 1] = T("%1: %2", M.propText(prop), filter[prop]) end
@@ -273,11 +329,9 @@ M.SORTS = {
     last_name = {
         text = _("Last name"),
         order = 2,
-        less = function(a, b)
-            local ka, kb = M.surname(a.name):lower(), M.surname(b.name):lower()
-            if ka ~= kb then return ffiUtil.strcoll(ka, kb) end
-            return ffiUtil.strcoll(a.name, b.name)
-        end,
+        -- Filled in by sort(): the family name from the author's information
+        -- when it has a trustworthy one, else surname().
+        less = nil,
     },
     books = {
         text = _("Number of books"),
@@ -307,11 +361,25 @@ local function last_read_times()
     return times
 end
 
--- sort(authors, options, read_times) sorts in place. read_times (file ->
--- time) is for specs.
-function M.sort(authors, options, read_times)
+-- sortName(name, info) -> what the Last name sort compares, in lower case.
+function M.sortName(name, info)
+    local family = info and require("authorinfo/author_info").familyName(info, name)
+    return (family or M.surname(name)):lower()
+end
+
+-- sort(authors, options, read_times, infoOf) sorts in place. read_times
+-- (file -> time) and infoOf (name -> author_info record) are for specs.
+function M.sort(authors, options, read_times, infoOf)
     local less = M.SORTS[options.sort] and M.SORTS[options.sort].less
-    if options.sort == "recent" then
+    if options.sort == "last_name" then
+        infoOf = infoOf or require("authorinfo/author_info").load
+        local key = {}
+        for _i, author in ipairs(authors) do key[author] = M.sortName(author.name, infoOf(author.name)) end
+        less = function(a, b)
+            if key[a] ~= key[b] then return ffiUtil.strcoll(key[a], key[b]) end
+            return ffiUtil.strcoll(a.name, b.name)
+        end
+    elseif options.sort == "recent" then
         read_times = read_times or last_read_times()
         local latest = {}
         for _i, author in ipairs(authors) do

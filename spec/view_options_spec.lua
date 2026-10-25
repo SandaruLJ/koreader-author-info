@@ -93,6 +93,39 @@ describe("authors view options", function()
             names(sorted))
     end)
 
+    it("sorts by the family name from author information when the name contains it", function()
+        local infos = {
+            ["Liu Cixin"] = { family = { "Liu" } },
+            ["Ursula K. Le Guin"] = { family = { "Kroeber", "Le Guin" } },
+            ["Saki"] = { family = { "Munro" } }, -- not in the shown name: not trusted
+        }
+        local sorted = ViewOptions.sort({
+            { name = "Ursula K. Le Guin", files = {} },
+            { name = "Saki", files = {} },
+            { name = "Liu Cixin", files = {} },
+            { name = "Becky Chambers", files = {} },
+        }, { sort = "last_name" }, nil, function(name) return infos[name] end)
+        -- Chambers, Le Guin, Liu (not "Cixin"), Saki
+        assert.are.same({ "Becky Chambers", "Ursula K. Le Guin", "Liu Cixin", "Saki" }, names(sorted))
+    end)
+
+    it("filters by country and genre from author information, listing all their books", function()
+        local infos = {
+            ["Terry Pratchett"] = { countries = { "United Kingdom" }, genres = { "fantasy", "fantasy comedy" } },
+            ["Neil Gaiman"] = { countries = { "United Kingdom", "United States" }, genres = { "fantasy" } },
+            ["Agatha Christie"] = { countries = { "United Kingdom" }, genres = { "crime fiction" } },
+        }
+        local infoOf = function(name) return infos[name] end
+        assert.are.same({ ["Neil Gaiman"] = { "/a", "/c" }, ["Terry Pratchett"] = { "/a", "/b" } },
+            shown(ViewOptions.filterAuthors(books, { genre = "fantasy" }, status_of, infoOf)))
+        assert.are.same({ ["Neil Gaiman"] = { "/a", "/c" } },
+            shown(ViewOptions.filterAuthors(books, { country = "United States" }, status_of, infoOf)))
+        assert.are.same({ { value = "United Kingdom", count = 3 }, { value = "United States", count = 1 } },
+            ViewOptions.authorValueCounts(ViewOptions.filterAuthors(books, {}, status_of, infoOf), "country", infoOf))
+        assert.are.equal("Country: United States · Keywords: Fantasy",
+            ViewOptions.describe({ country = "United States", keywords = "Fantasy" }))
+    end)
+
     it("Read lists authors with a finished book, and only those books", function()
         assert.are.same({ ["Neil Gaiman"] = { "/a" }, ["Terry Pratchett"] = { "/a" } },
             shown(ViewOptions.filterAuthors(books, { status = { read = true } }, status_of)))

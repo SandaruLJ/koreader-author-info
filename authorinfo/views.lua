@@ -42,6 +42,7 @@ local Screen = Device.screen
 local AuthorIndex = require("authorinfo/author_index")
 local AuthorImages = require("authorinfo/author_images")
 local Actions = require("authorinfo/actions")
+local AuthorInfo = require("authorinfo/author_info")
 local ViewOptions = require("authorinfo/view_options")
 
 local M = {}
@@ -265,6 +266,9 @@ function M.showBooks(ui, author, files, on_open)
         subtitle = T(N_("1 book", "%1 books", count), count),
         item_table = book_items(files, cb),
         ui = ui,
+        -- About the author, when we have information about them.
+        title_bar_left_icon = AuthorInfo.has(author) and "info" or nil,
+        onLeftButtonTap = function() Actions.showAbout(author) end,
         onReturn = function() books.close_callback() end,
         onMenuSelect = function(_self, item)
             filemanagerutil.openFile(ui, item.file, function()
@@ -318,13 +322,13 @@ end
 
 local CHECK = " \u{2713}" -- as Collections marks a checked filter
 
--- showPropValues(books, prop, on_pick): the values of one metadata field
--- among the given books, with counts, in a list like Collections' "filter by"
--- list. Picking one calls on_pick(value).
-local function show_prop_values(books, prop, on_pick)
+-- showPropValues(entries, prop, on_pick, empty_text): the values one can
+-- filter by ({value, count} entries), in a list like Collections' "filter
+-- by" list. Picking one calls on_pick(value).
+local function show_prop_values(entries, prop, on_pick, empty_text)
     local list
     local items = {}
-    for _i, entry in ipairs(ViewOptions.valueCounts(books, prop)) do
+    for _i, entry in ipairs(entries) do
         items[#items + 1] = {
             text = entry.value,
             mandatory = tostring(entry.count),
@@ -335,10 +339,7 @@ local function show_prop_values(books, prop, on_pick)
         }
     end
     if #items == 0 then
-        UIManager:show(InfoMessage:new{
-            text = T(_("None of these books has any %1."), ViewOptions.propText(prop):lower()),
-            timeout = 3,
-        })
+        UIManager:show(InfoMessage:new{ text = empty_text, timeout = 4 })
         return
     end
     list = Menu:new{
@@ -445,11 +446,23 @@ function M.showAuthors(ui)
                         apply()
                         return
                     end
-                    -- Offer the values among the books the other filters keep.
-                    show_prop_values(ViewOptions.keptBooks(books, filter), prop, function(value)
+                    local function pick(value)
                         filter[prop] = value
                         apply()
-                    end)
+                    end
+                    -- Offer the values among what the other filters keep.
+                    if prop == "country" or prop == "genre" then
+                        show_prop_values(
+                            ViewOptions.authorValueCounts(ViewOptions.filterAuthors(books, filter), prop),
+                            prop, pick,
+                            T(_("None of these authors has a %1 yet. Look up author information from the menu first."),
+                                ViewOptions.propText(prop):lower()))
+                    else
+                        show_prop_values(
+                            ViewOptions.valueCounts(ViewOptions.keptBooks(books, filter), prop),
+                            prop, pick,
+                            T(_("None of these books has any %1."), ViewOptions.propText(prop):lower()))
+                    end
                 end,
             }
         end
@@ -460,6 +473,7 @@ function M.showAuthors(ui)
                 { status_button("unread"), status_button("read") },
                 {},
                 { prop_button("language"), prop_button("keywords") },
+                { prop_button("country"), prop_button("genre") },
                 {},
                 {{
                     text = _("Reset all filters"),
@@ -501,7 +515,7 @@ function M.showAuthors(ui)
                 }},
                 {},
                 {{
-                    text = _("Find missing author images"),
+                    text = _("Find missing images and information"),
                     callback = function()
                         UIManager:close(dialog)
                         Actions.findAll(names(), refresh)

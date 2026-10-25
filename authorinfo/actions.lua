@@ -1,15 +1,18 @@
--- The ways a reader asks for author photos (author_images does the finding
--- and saving):
+-- The ways a reader asks for author photos and information (author_images
+-- and author_info do the finding and saving):
 --
---   findOne(name, on_done)    -- an author's hold menu. Replaces the
---                                author's photo: the reader asked for it.
---   findAll(names, on_done)   -- every author with no photo yet, after a
---                                confirm that says how many and where from.
+--   findOne(name, on_done)    -- an author's hold menu: their photo and
+--                                information, replacing what was there.
+--   findInfo(name, on_done)   -- an author's hold menu: information only.
+--   findAll(names, on_done)   -- every author missing a photo or information,
+--                                after a confirm that says how many.
 --   remove(name, on_done)     -- an author's hold menu, when a photo is set.
+--   showAbout(name)           -- the author's information, in a text viewer.
 --
 -- Lookups wait for Wi-Fi the KOReader way (runWhenOnline asks; nothing
 -- connects by itself) and run each author in a forked child, so the UI keeps
--- answering and tapping the progress message stops the work.
+-- answering and tapping the progress message stops the work. Within a child,
+-- the photo and information lookups share their first requests.
 
 local ConfirmBox = require("ui/widget/confirmbox")
 local InfoMessage = require("ui/widget/infomessage")
@@ -20,23 +23,20 @@ local logger = require("logger")
 
 local M = {}
 
--- Consecutive authors that reached neither source before the bulk pass gives
--- up: a dropped connection should cost a few seconds, not one timeout per
--- author in the library.
+-- Consecutive authors that reached no source before the bulk pass gives up: a
+-- dropped connection should cost a few seconds, not one timeout per author.
 M.MAX_UNREACHABLE = 3
 
 local function images()
     return require("authorinfo/author_images")
 end
 
-local function unreachable_text()
-    return _("Couldn't reach Open Library or Wikipedia.")
+local function infos()
+    return require("authorinfo/author_info")
 end
 
-local function fail_text(why, name)
-    if why == "unreachable" then return unreachable_text() end
-    if why == "no storage" then return _("Couldn't create the author images folder.") end
-    return T(_("No photo found for %1."), name)
+local function unreachable_text()
+    return _("Couldn't reach Open Library, Wikipedia or Wikidata.")
 end
 
 local function when_online(fn)
@@ -48,40 +48,90 @@ end
 
 local function notify(on_done)
     images().invalidate()
+    infos().invalidate()
     if type(on_done) == "function" then
         local ok, err = pcall(on_done)
-        if not ok then logger.warn("authors: refresh after image change failed", err) end
+        if not ok then logger.warn("authors: refresh after lookup failed", err) end
     end
 end
 
--- lookup(Trapper, name, trap) -> completed, found, why. One author in a
--- forked child; the child saves the photo itself and answers with one line.
-local function lookup(Trapper, name, trap)
+-- lookup(Trapper, name, trap, want) -> completed, result. One author in a
+-- forked child, which saves what it finds itself and answers with one line
+-- per part: "<photo|info> <found|missed|skipped> <reason>".
+--   result.photo / result.info: true when found
+--   result.unreachable: no source answered for any part asked
+--   result.no_storage: a part could not be saved
+local function lookup(Trapper, name, trap, want)
     local completed, out = Trapper:dismissableRunInSubprocess(function()
-        local path, why = require("authorinfo/author_images").fetch(name)
-        return (path and "found" or "missed") .. "\n" .. tostring(why or "")
+        local session = {}
+        local lines = {}
+        if want.photo then
+            local path, why = require("authorinfo/author_images").fetch(name, { session = session })
+            lines[#lines + 1] = "photo " .. (path and "found" or "missed") .. " " .. tostring(why or "")
+        end
+        if want.info then
+            local info, why = require("authorinfo/author_info").fetch(name, { session = session })
+            lines[#lines + 1] = "info " .. (info and "found" or "missed") .. " " .. tostring(why or "")
+        end
+        return table.concat(lines, "\n")
     end, trap, true)
     if not completed then return false end
-    local what, why = tostring(out or ""):match("^(%a+)\n(.*)$")
-    return true, what == "found", why
+    local result, asked, unreachable = {}, 0, 0
+    for part, what, why in tostring(out or ""):gmatch("(%a+) (%a+) ([^\n]*)") do
+        asked = asked + 1
+        if what == "found" then result[part] = true end
+        if why == "unreachable" then unreachable = unreachable + 1 end
+        if why == "no storage" then result.no_storage = true end
+    end
+    result.unreachable = asked > 0 and unreachable == asked
+    return true, result
 end
 
-function M.findOne(name, on_done)
+local function show_failure(result, name, what)
+    local text
+    if result.unreachable then
+        text = unreachable_text()
+    elseif result.no_storage then
+        text = _("Couldn't save to the author images or information folder.")
+    elseif what == "info" then
+        text = T(_("No information found for %1."), name)
+    else
+        text = T(_("No photo or information found for %1."), name)
+    end
+    UIManager:show(InfoMessage:new{ text = text })
+end
+
+-- find(name, want, on_done): one author, with a message while it runs.
+local function find(name, want, on_done)
     if type(name) ~= "string" or name == "" or images().isPlaceholder(name) then return end
     when_online(function()
         local Trapper = require("ui/trapper")
-        local notice = InfoMessage:new{ text = T(_("Looking for a photo of %1…"), name) }
+        local notice = InfoMessage:new{
+            text = want.photo and T(_("Looking for a photo of %1…"), name)
+                or T(_("Looking for information about %1…"), name),
+        }
         UIManager:show(notice)
         UIManager:forceRePaint()
-        local completed, found, why = lookup(Trapper, name, notice)
+        local completed, result = lookup(Trapper, name, notice, want)
         UIManager:close(notice)
         if not completed then return end
-        if not found then
-            UIManager:show(InfoMessage:new{ text = fail_text(why, name) })
-            return
+        if result.photo or result.info then notify(on_done) end
+        if want.photo and not result.photo and result.info then
+            UIManager:show(InfoMessage:new{
+                text = T(_("No photo found for %1, but found information about them."), name),
+            })
+        elseif not (result.photo or result.info) then
+            show_failure(result, name, want.photo and "both" or "info")
         end
-        notify(on_done)
     end)
+end
+
+function M.findOne(name, on_done)
+    find(name, { photo = true, info = true }, on_done)
+end
+
+function M.findInfo(name, on_done)
+    find(name, { info = true }, on_done)
 end
 
 -- hold_awake(on): a pass over a few hundred authors runs for minutes, and the
@@ -102,13 +152,21 @@ end
 
 local running = false
 
--- run(names, on_done) -- the bulk pass itself, once confirmed.
-function M.run(names, on_done)
-    local AuthorImages = images()
+-- plan(names) -> { {name, photo, info}, ... }: what each author is missing.
+function M.plan(names)
+    local AuthorImages, AuthorInfo = images(), infos()
     local todo = {}
     for _i, name in ipairs(names or {}) do
-        if not AuthorImages.isPlaceholder(name) then todo[#todo + 1] = name end
+        if type(name) == "string" and not AuthorImages.isPlaceholder(name) then
+            local photo, info = not AuthorImages.has(name), not AuthorInfo.has(name)
+            if photo or info then todo[#todo + 1] = { name = name, photo = photo, info = info } end
+        end
     end
+    return todo
+end
+
+-- run(todo, on_done) -- the bulk pass itself, once confirmed.
+function M.run(todo, on_done)
     if #todo == 0 then return end
     if running then
         UIManager:show(InfoMessage:new{
@@ -119,38 +177,53 @@ function M.run(names, on_done)
         local Trapper = require("ui/trapper")
         running = true
         hold_awake(true)
-        local found, asked, unreachable_run = 0, 0, 0
+        local photos_found, photos_asked, infos_found, infos_asked = 0, 0, 0, 0
+        local asked, unreachable_run = 0, 0
         local stopped, offline = false, false
         local notice
         local ok_run, err_run = xpcall(function()
-            for index, name in ipairs(todo) do
+            for index, entry in ipairs(todo) do
                 local previous = notice
                 notice = InfoMessage:new{
-                    text = T(_("Finding author images: %1 of %2"), index, #todo)
-                        .. "\n" .. name .. "\n\n" .. _("Tap to stop."),
+                    text = T(_("Finding author images and information: %1 of %2"), index, #todo)
+                        .. "\n" .. entry.name .. "\n\n" .. _("Tap to stop."),
                 }
                 UIManager:show(notice)
                 if previous then UIManager:close(previous) end
                 UIManager:forceRePaint()
-                local completed, got, why = lookup(Trapper, name, notice)
+                local completed, result = lookup(Trapper, entry.name, notice, entry)
                 if not completed then stopped = true; break end
                 asked = asked + 1
-                if got then found = found + 1 end
-                if why == "unreachable" then
+                if entry.photo then
+                    photos_asked = photos_asked + 1
+                    if result.photo then photos_found = photos_found + 1 end
+                end
+                if entry.info then
+                    infos_asked = infos_asked + 1
+                    if result.info then infos_found = infos_found + 1 end
+                end
+                if result.unreachable then
                     unreachable_run = unreachable_run + 1
                     if unreachable_run >= M.MAX_UNREACHABLE then offline = true; break end
                 else
                     unreachable_run = 0
                 end
-                if why == "no storage" then break end
+                if result.no_storage then break end
             end
         end, debug.traceback)
         if notice then UIManager:close(notice) end
         hold_awake(false)
         running = false
-        if not ok_run then logger.warn("authors: image pass failed", err_run) end
-        if found > 0 then notify(on_done) end
-        local text = T(_("Found images for %1 of %2 authors."), found, asked)
+        if not ok_run then logger.warn("authors: lookup pass failed", err_run) end
+        if photos_found + infos_found > 0 then notify(on_done) end
+        local lines = {}
+        if photos_asked > 0 then
+            lines[#lines + 1] = T(_("Found images for %1 of %2 authors."), photos_found, photos_asked)
+        end
+        if infos_asked > 0 then
+            lines[#lines + 1] = T(_("Found information about %1 of %2 authors."), infos_found, infos_asked)
+        end
+        local text = table.concat(lines, "\n")
         if offline then
             text = text .. "\n\n" .. unreachable_text()
         elseif stopped and asked < #todo then
@@ -161,25 +234,29 @@ function M.run(names, on_done)
 end
 
 function M.findAll(names, on_done)
-    local todo = images().missing(names)
+    local todo = M.plan(names)
     if #todo == 0 then
         local any_author = false
         for _i, name in ipairs(names or {}) do
             if not images().isPlaceholder(name) then any_author = true; break end
         end
         UIManager:show(InfoMessage:new{
-            text = any_author and _("Every author already has an image.")
+            text = any_author and _("Every author already has an image and information.")
                 or _("No authors found."),
             timeout = 3,
         })
         return
     end
-    local ask = #todo == 1
-        and T(_("Look for a photo of %1, the one author with no image yet?"), todo[1])
-        or T(_("Look for photos of the %1 authors with no image yet?"), #todo)
+    local photos, info = 0, 0
+    for _i, entry in ipairs(todo) do
+        if entry.photo then photos = photos + 1 end
+        if entry.info then info = info + 1 end
+    end
+    local ask = T(_("Look up %1 authors online?"), #todo) .. "\n\n"
+        .. T(_("Missing photos: %1\nMissing information: %2"), photos, info)
     UIManager:show(ConfirmBox:new{
-        text = ask .. "\n\n" .. _("Photos come from Open Library, or Wikipedia when it has none. Images you already have are kept."),
-        ok_text = _("Find images"),
+        text = ask .. "\n\n" .. _("Photos come from Open Library or Wikipedia. Information comes from Wikipedia, Open Library and Wikidata. What you already have is kept."),
+        ok_text = _("Look up"),
         ok_callback = function() M.run(todo, on_done) end,
     })
 end
@@ -188,21 +265,51 @@ function M.remove(name, on_done)
     if images().remove(name) then notify(on_done) end
 end
 
+-- showAbout(name) -> true when there was information to show.
+function M.showAbout(name)
+    local info = infos().load(name)
+    if not info then return false end
+    UIManager:show(require("ui/widget/textviewer"):new{
+        title = name,
+        text = infos().aboutText(info),
+    })
+    return true
+end
+
 -- holdButtons(name, close_dialog, on_done) -> ButtonDialog rows for an
 -- author's hold menu.
 function M.holdButtons(name, close_dialog, on_done)
     if type(name) ~= "string" or name == "" or images().isPlaceholder(name) then
         return {}
     end
-    local has = images().has(name)
-    local rows = {{{
-        text = has and _("Replace author image online") or _("Find author image online"),
+    local rows = {}
+    if infos().has(name) then
+        rows[#rows + 1] = {{
+            text = _("About this author"),
+            callback = function()
+                close_dialog()
+                M.showAbout(name)
+            end,
+        }}
+    end
+    local has_photo = images().has(name)
+    rows[#rows + 1] = {{
+        text = has_photo and _("Replace author image online") or _("Find author image online"),
         callback = function()
             close_dialog()
             M.findOne(name, on_done)
         end,
-    }}}
-    if has then
+    }}
+    if not infos().has(name) then
+        rows[#rows + 1] = {{
+            text = _("Find author information online"),
+            callback = function()
+                close_dialog()
+                M.findInfo(name, on_done)
+            end,
+        }}
+    end
+    if has_photo then
         rows[#rows + 1] = {{
             text = _("Remove author image"),
             callback = function()

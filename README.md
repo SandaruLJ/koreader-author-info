@@ -1,6 +1,6 @@
 # Author Info for KOReader
 
-Browse your library by author, with a photo of each author.
+Browse your library by author, with a photo and a short bio of each author.
 
 - **Main menu → Authors** (next to History and Collections), or assign the
   **Authors** action to a gesture.
@@ -8,22 +8,27 @@ Browse your library by author, with a photo of each author.
   each author's photo and name. In list or classic modes they appear in
   KOReader's standard list.
 - **Tap an author** to see their books in the file browser's display style.
-  The back arrow returns to the authors.
-- **Hold an author** to find, replace or remove their photo.
+  The back arrow returns to the authors, and the ⓘ button shows **About
+  this author**.
+- **Hold an author** for **About this author**, or to find, replace or
+  remove their photo and information.
+- **About this author** shows their years, country, a short bio, genres and
+  notable works.
 - The **☰ button** has:
   - **Sort by:** name, last name, number of books or recently read,
-    optionally reversed. For last name, a name written "Le Guin, Ursula K."
-    sorts by the part before the comma. Otherwise it is the last word
-    together with particles before it ("Ursula K. Le Guin" → Le Guin,
-    "Walter de la Mare" → de la Mare), skipping suffixes like "Jr.". This
-    follows the English convention; Dutch-style "van Gogh" sorts under V.
+    optionally reversed. For last name, the family name from Wikidata is
+    used when the author's name contains it ("Liu Cixin" → Liu). Otherwise a
+    name written "Le Guin, Ursula K." sorts by the part before the comma,
+    and other names by the last word together with particles before it
+    ("Walter de la Mare" → de la Mare), skipping suffixes like "Jr.".
   - **Filter:** by language or keywords, as in Collections: an author is
     shown when any of their books match, and only the matching books are
-    listed when you tap them. And by status:
+    listed when you tap them. By the author's country or genre, once their
+    information has been looked up. And by status:
     - **New** / **Reading:** authors with a book that is new or in progress.
     - **Read:** authors with at least one finished book.
     - **Unread:** authors with no finished book at all.
-  - **Find missing author images** for the authors shown.
+  - **Find missing images and information** for the authors shown.
 
   The sort order and filters are remembered for next time, as KOReader does
   for Collections.
@@ -40,6 +45,15 @@ Books with several authors are listed under each of them.
   a writer. Nothing is downloaded unless you ask.
 - Photos are saved in `koreader/author-info/<Author Name>.jpg`. You can put
   your own JPEG or PNG there under the same name.
+- Author information starts from the same Open Library match. Details
+  (names, country, years, genres, notable works) come from Wikidata, with
+  labels in KOReader's language where available. The bio is the first
+  paragraph of the author's Wikipedia page in KOReader's language, else in
+  English, else Open Library's bio. Older authors' historical countries are
+  named by today's country (e.g. "United Kingdom of Great Britain and
+  Ireland" → United Kingdom) where that is unambiguous.
+- Information is saved beside the photo, in
+  `koreader/author-info/<Author Name>.json`.
 
 ## Install
 
