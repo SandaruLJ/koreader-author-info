@@ -335,26 +335,48 @@ local function answered(data, err)
     return data ~= nil or (type(err) == "table" and err.status ~= nil)
 end
 
+-- note(state, data, err): records in state how a request went:
+--   state.answered   -- some server replied (see answered)
+--   state.limited    -- a server was still rate limiting after the retries
+--   state.incomplete -- a request got no real answer (rate limited, a
+--                       server error, or no reply), so what was found may
+--                       be missing parts and should not be kept as final
+function M.note(state, data, err)
+    if type(state) ~= "table" then return end
+    state.answered = state.answered or answered(data, err)
+    if data == nil and type(err) == "table" then
+        if err.kind == "rate_limited" then state.limited = true end
+        if err.kind == "rate_limited" or err.kind == "server" or err.status == nil then
+            state.incomplete = true
+        end
+    end
+end
+
+-- merge(state, other): adds how other's requests went to state.
+function M.merge(state, other)
+    if type(state) ~= "table" or type(other) ~= "table" then return end
+    state.answered = state.answered or other.answered
+    state.limited = state.limited or other.limited
+    state.incomplete = state.incomplete or other.incomplete
+end
+
 -- One author's lookup may ask for the photo and the information (see
 -- author_info). Both start from the same Open Library search and Wikipedia
 -- page, so they share them through a session table: pass the same table as
 -- opts.session to both. Without one, nothing is remembered.
 
 -- searchOpenLibrary(name, transport, session) -> the matching author's search
--- result (see pickOpenLibrary) | nil, answered
+-- result (see pickOpenLibrary) | nil, answered, state (see note)
 function M.searchOpenLibrary(name, transport, session)
     local memo = session and session.openlibrary
-    if memo then return memo.doc, memo.answered end
+    if memo then return memo.doc, memo.state.answered, memo.state end
     local data, err = Http.getJson(OL_SEARCH .. escape(M.queryName(name)),
         OL_HOST, JSON_HEADERS, transport)
-    local doc, any_answer
-    if type(data) == "table" then
-        doc, any_answer = M.pickOpenLibrary(data.docs, name), true
-    else
-        any_answer = answered(data, err)
-    end
-    if session then session.openlibrary = { doc = doc, answered = any_answer } end
-    return doc, any_answer
+    local state = {}
+    M.note(state, data, err)
+    local doc = type(data) == "table" and M.pickOpenLibrary(data.docs, name) or nil
+    if session then session.openlibrary = { doc = doc, state = state } end
+    return doc, state.answered, state
 end
 
 -- openLibraryId(doc) -> "OL123A" | nil
@@ -363,43 +385,43 @@ function M.openLibraryId(doc)
     return olid and olid:match("^OL%d+A$") and olid or nil
 end
 
--- findOpenLibrary(name, transport, session) -> url | nil, answered. The url
--- may still 404: Open Library knows many authors it has no photo of.
+-- findOpenLibrary(name, transport, session) -> url | nil, answered, state.
+-- The url may still 404: Open Library knows many authors it has no photo of.
 function M.findOpenLibrary(name, transport, session)
-    local doc, any_answer = M.searchOpenLibrary(name, transport, session)
+    local doc, any_answer, state = M.searchOpenLibrary(name, transport, session)
     local olid = M.openLibraryId(doc)
-    if olid then return string.format(OL_PHOTO, olid), true end
-    return nil, any_answer
+    if olid then return string.format(OL_PHOTO, olid), true, state end
+    return nil, any_answer, state
 end
 
 -- findWikipediaPage(name, transport, session) -> the writer's English
 -- Wikipedia page (title, description, thumbnail, pageprops.wikibase_item) |
--- nil, answered. Each suffixed title is tried only when the one before found
--- no page describing a writer.
+-- nil, answered, state (see note). Each suffixed title is tried only when the
+-- one before found no page describing a writer.
 function M.findWikipediaPage(name, transport, session)
     local memo = session and session.wikipedia
-    if memo then return memo.page, memo.answered end
+    if memo then return memo.page, memo.state.answered, memo.state end
     local query = M.queryName(name)
-    local any_answer, found = false, nil
+    local state, found = {}, nil
     for _i, title in ipairs({ query, query .. " (writer)", query .. " (author)",
             query .. " (novelist)" }) do
         local data, err = Http.getJson(WP_API .. escape(title), WP_HOST,
             JSON_HEADERS, transport)
-        any_answer = any_answer or answered(data, err)
+        M.note(state, data, err)
         found = type(data) == "table" and M.writerPage(data) or nil
-        if found then break end
+        if found or state.limited then break end
     end
-    if session then session.wikipedia = { page = found, answered = any_answer } end
-    return found, any_answer
+    if session then session.wikipedia = { page = found, state = state } end
+    return found, state.answered, state
 end
 
--- findWikipedia(name, transport, session) -> photo url | nil, answered
+-- findWikipedia(name, transport, session) -> photo url | nil, answered, state
 function M.findWikipedia(name, transport, session)
-    local page, any_answer = M.findWikipediaPage(name, transport, session)
+    local page, any_answer, state = M.findWikipediaPage(name, transport, session)
     if page and type(page.thumbnail) == "table" and wikimedia_host(page.thumbnail.source) then
-        return page.thumbnail.source, true
+        return page.thumbnail.source, true, state
     end
-    return nil, any_answer
+    return nil, any_answer, state
 end
 
 -- What the bytes are, whatever the URL said.
@@ -546,7 +568,8 @@ end
 -- opts.download_transport stub the network (specs).
 --   source: "openlibrary" | "wikipedia"
 --   reason: "placeholder", "bad name", "no storage", "none" (asked, and
---           there is no photo), or "unreachable" (no source answered at all)
+--           there is no photo), "rate_limited" (a source was still rate
+--           limiting; try later), or "unreachable" (no source answered at all)
 function M.fetch(name, opts)
     opts = opts or {}
     if M.isPlaceholder(name) then return nil, "placeholder" end
@@ -555,7 +578,7 @@ function M.fetch(name, opts)
     local dir = M.dir()
     if not ensure_dir(dir) then return nil, "no storage" end
 
-    local url, ol_answered = M.findOpenLibrary(name, opts.transport, opts.session)
+    local url, ol_answered, ol_state = M.findOpenLibrary(name, opts.transport, opts.session)
     if url then
         local path = save(url, dir, stem, opts.download_transport)
         if path then
@@ -563,7 +586,7 @@ function M.fetch(name, opts)
             return path, "openlibrary"
         end
     end
-    local wp_url, wp_answered = M.findWikipedia(name, opts.transport, opts.session)
+    local wp_url, wp_answered, wp_state = M.findWikipedia(name, opts.transport, opts.session)
     if wp_url then
         local path = save(wp_url, dir, stem, opts.download_transport)
         if path then
@@ -572,6 +595,7 @@ function M.fetch(name, opts)
         end
     end
     logger.dbg("authors: no photo found, answered =", tostring(ol_answered or wp_answered))
+    if ol_state.limited or wp_state.limited then return nil, "rate_limited" end
     return nil, (ol_answered or wp_answered) and "none" or "unreachable"
 end
 

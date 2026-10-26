@@ -265,11 +265,6 @@ local function escape(s)
     end))
 end
 
--- answered(data, err): a server replied at all, even with an error status.
-local function answered(data, err)
-    return data ~= nil or (type(err) == "table" and err.status ~= nil)
-end
-
 -- ---------------------------------------------------------------------
 -- Choosing what to show
 -- ---------------------------------------------------------------------
@@ -319,9 +314,11 @@ end
 -- Network
 -- ---------------------------------------------------------------------
 
+-- get(url, host, transport, state) -> decoded JSON | nil; how it went is
+-- noted in state (see AuthorImages.note).
 local function get(url, host, transport, state)
     local data, err = Http.getJson(url, host, JSON_HEADERS, transport)
-    state.answered = state.answered or answered(data, err)
+    AuthorImages.note(state, data, err)
     return type(data) == "table" and data or nil
 end
 
@@ -444,20 +441,24 @@ end
 --   opts.language  -- Wikipedia/Wikidata language (default KOReader's)
 --   opts.transport -- stubs the network (specs)
 --   reason: "placeholder", "bad name", "none" (asked, nothing found),
+--           "rate_limited" (a source was still rate limiting; try later),
+--           "incomplete" (a source did not answer properly; try later),
 --           "unreachable" (no source answered), "no storage"
+-- Nothing is saved from a lookup that was rate limited or incomplete, so
+-- finding missing information tries the author again.
 function M.fetch(name, opts)
     opts = opts or {}
     if AuthorImages.isPlaceholder(name) then return nil, "placeholder" end
     if not M.path(name) then return nil, "bad name" end
     local transport, session = opts.transport, opts.session or {}
-    local state = { answered = false }
+    local state = {}
     local language = opts.language or M.uiLanguage()
     local languages = language == "en" and { "en", "mul" } or { language, "en", "mul" }
     local info = { version = M.VERSION, name = name, fetched = os.time() }
 
     -- 1. Open Library.
-    local doc, ol_answered = AuthorImages.searchOpenLibrary(name, transport, session)
-    state.answered = state.answered or ol_answered
+    local doc, _answered, ol_state = AuthorImages.searchOpenLibrary(name, transport, session)
+    AuthorImages.merge(state, ol_state)
     local olid = AuthorImages.openLibraryId(doc)
     local record
     if olid then
@@ -468,8 +469,8 @@ function M.fetch(name, opts)
 
     -- 2. Wikipedia's page for the Wikidata id when Open Library has none.
     if type(wikidata_id) ~= "string" or not wikidata_id:match("^Q%d+$") then
-        local page, wp_answered = AuthorImages.findWikipediaPage(name, transport, session)
-        state.answered = state.answered or wp_answered
+        local page, _wp_answered, wp_state = AuthorImages.findWikipediaPage(name, transport, session)
+        AuthorImages.merge(state, wp_state)
         wikidata_id = page and type(page.pageprops) == "table" and page.pageprops.wikibase_item
         if page then info.wikipedia = { lang = "en", title = page.title } end
     end
@@ -543,6 +544,8 @@ function M.fetch(name, opts)
         if info.bio then info.bio_source = "openlibrary" end
     end
 
+    if state.limited then return nil, "rate_limited" end
+    if state.incomplete then return nil, state.answered and "incomplete" or "unreachable" end
     if not (info.bio or info.wikidata or record) then
         return nil, state.answered and "none" or "unreachable"
     end

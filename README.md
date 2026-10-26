@@ -37,7 +37,10 @@ Browse your library by author, with a photo and a short bio of each author.
     white on a black band across its bottom.
   - **Find missing:** look up the images, information, or both, of the
     authors shown that don't have them yet. The device is kept awake until
-    the lookup finishes.
+    the lookup finishes. When a site asks to slow down, the lookup waits a
+    minute and carries on (and stops if it asks again). Information that
+    couldn't be looked up completely, because a site was busy or didn't
+    answer, isn't saved, so the next Find missing tries those authors again.
   - **Clear:** delete the saved images, information, or both, of the
     authors shown (images include ones you added yourself). Use Find
     missing afterwards to look them up afresh.

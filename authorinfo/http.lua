@@ -307,7 +307,7 @@ function M.get(url, host, headers, transport, server_retries)
 end
 
 -- Longest wait for a rate-limited request before retrying, in seconds.
-M.MAX_RETRY_WAIT = 10
+M.MAX_RETRY_WAIT = 30
 
 -- sleep(seconds): replaceable in specs.
 function M.sleep(seconds)

@@ -183,7 +183,13 @@ describe("author info", function()
             end)
         assert.is_nil(err)
         assert.is_true(data.ok)
-        assert.are.same({ 10, 10 }, waited) -- the server asked for 30 s; capped
+        assert.are.same({ 30, 30 }, waited)
+        waited, calls = {}, 0
+        require("authorinfo/http").getJson("https://openlibrary.org/x", "openlibrary.org", {}, function()
+            calls = calls + 1
+            return { status = 429, headers = { ["Retry-After"] = "600" }, body = "" }
+        end)
+        assert.are.same({ 30, 30 }, waited, "a long wait asked for is capped")
 
         -- No Retry-After: a short wait of our own.
         waited, calls = {}, 0
@@ -210,6 +216,28 @@ describe("author info", function()
             return nil, { kind = "network" }
         end)
         assert.are.equal(2, calls)
+    end)
+
+    it("keeps nothing from a lookup that was rate limited or cut short, so it is tried again", function()
+        responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
+        responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" } }
+        responses[WD] = le_guin_entity
+        responses[WD_LABELS] = le_guin_labels
+        responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
+            { type = "standard", extract = "Summary only." }
+        local function failing(status)
+            return function(url)
+                if url:find("prop=extracts", 1, true) then return { status = status, headers = {}, body = "" } end
+                return respond(url)
+            end
+        end
+        local info, why = AuthorInfo.fetch("Ursula K. Le Guin", { transport = failing(429), language = "en", session = {} })
+        assert.is_nil(info)
+        assert.are.equal("rate_limited", why)
+        info, why = AuthorInfo.fetch("Ursula K. Le Guin", { transport = failing(502), language = "en", session = {} })
+        assert.is_nil(info)
+        assert.are.equal("incomplete", why)
+        assert.is_false(AuthorInfo.has("Ursula K. Le Guin"))
     end)
 
     it("picks the family name the shown name contains, latest first", function()

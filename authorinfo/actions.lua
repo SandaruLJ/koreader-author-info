@@ -46,6 +46,10 @@ local function unreachable_text()
     return _("Couldn't reach Open Library, Wikipedia or Wikidata.")
 end
 
+local function busy_text()
+    return _("Open Library or Wikipedia is busy. Try again in a few minutes.")
+end
+
 local function when_online(fn)
     local NetworkMgr = require("ui/network/manager")
     NetworkMgr:runWhenOnline(function()
@@ -89,6 +93,8 @@ local function lookup(Trapper, name, trap, want)
         if what == "found" then result[part] = true end
         if why == "unreachable" then unreachable = unreachable + 1 end
         if why == "no storage" then result.no_storage = true end
+        if why == "rate_limited" then result.limited = true end
+        if why == "incomplete" then result.incomplete = true end
     end
     result.unreachable = asked > 0 and unreachable == asked
     return true, result
@@ -98,6 +104,10 @@ local function show_failure(result, name, what)
     local text
     if result.unreachable then
         text = unreachable_text()
+    elseif result.limited then
+        text = busy_text()
+    elseif result.incomplete then
+        text = T(_("Couldn't get a complete answer about %1. Try again later."), name)
     elseif result.no_storage then
         text = _("Couldn't save to the author images or information folder.")
     elseif what == "info" then
@@ -203,6 +213,19 @@ function M.plan(names, what)
     return todo
 end
 
+-- How long a pass waits when a source is still rate limiting, before
+-- trying that author once more. If it is limited again, the pass stops.
+M.RATE_LIMIT_PAUSE = 60
+
+-- pause(Trapper, trap) -> false when stopped during the wait.
+local function pause(Trapper, trap)
+    local completed = Trapper:dismissableRunInSubprocess(function()
+        require("ffi/util").sleep(M.RATE_LIMIT_PAUSE)
+        return "done"
+    end, trap, true)
+    return completed
+end
+
 -- run(todo, on_done) -- the bulk pass itself, once confirmed.
 function M.run(todo, on_done)
     if #todo == 0 then return end
@@ -217,20 +240,31 @@ function M.run(todo, on_done)
         hold_awake(true)
         local photos_found, photos_asked, infos_found, infos_asked = 0, 0, 0, 0
         local asked, unreachable_run = 0, 0
-        local stopped, offline = false, false
+        local stopped, offline, busy = false, false, false
         local notice
+        local function show(text)
+            local previous = notice
+            notice = InfoMessage:new{ text = text .. "\n\n" .. _("Tap to stop.") }
+            UIManager:show(notice)
+            if previous then UIManager:close(previous) end
+            UIManager:forceRePaint()
+        end
         local ok_run, err_run = xpcall(function()
             for index, entry in ipairs(todo) do
-                local previous = notice
-                notice = InfoMessage:new{
-                    text = T(_("Looking up authors: %1 of %2"), index, #todo)
-                        .. "\n" .. entry.name .. "\n\n" .. _("Tap to stop."),
-                }
-                UIManager:show(notice)
-                if previous then UIManager:close(previous) end
-                UIManager:forceRePaint()
+                local text = T(_("Looking up authors: %1 of %2"), index, #todo) .. "\n" .. entry.name
+                show(text)
                 local completed, result = lookup(Trapper, entry.name, notice, entry)
+                if completed and result.limited then
+                    show(T(_("Open Library or Wikipedia asked to slow down. Waiting %1 seconds…"),
+                        M.RATE_LIMIT_PAUSE))
+                    completed = pause(Trapper, notice)
+                    if completed then
+                        show(text)
+                        completed, result = lookup(Trapper, entry.name, notice, entry)
+                    end
+                end
                 if not completed then stopped = true; break end
+                if result.limited then busy = true; break end
                 asked = asked + 1
                 if entry.photo then
                     photos_asked = photos_asked + 1
@@ -261,13 +295,16 @@ function M.run(todo, on_done)
         if infos_asked > 0 then
             lines[#lines + 1] = T(_("Found information about %1 of %2 authors."), infos_found, infos_asked)
         end
-        local text = table.concat(lines, "\n")
+        local parts = { #lines > 0 and table.concat(lines, "\n") or nil }
         if offline then
-            text = text .. "\n\n" .. unreachable_text()
-        elseif stopped and asked < #todo then
-            text = text .. "\n\n" .. T(_("Stopped before %1 more."), #todo - asked)
+            parts[#parts + 1] = unreachable_text()
+        elseif busy then
+            parts[#parts + 1] = busy_text()
         end
-        UIManager:show(InfoMessage:new{ text = text })
+        if (stopped or busy) and asked < #todo then
+            parts[#parts + 1] = T(_("Stopped before %1 more."), #todo - asked)
+        end
+        UIManager:show(InfoMessage:new{ text = #parts > 0 and table.concat(parts, "\n\n") or _("Stopped.") })
     end)
 end
 
