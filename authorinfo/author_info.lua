@@ -369,9 +369,9 @@ local function wikipedia_summary(language, title, transport, state)
     return extract ~= "" and extract or nil
 end
 
--- wikipediaIntroParagraphs(language, title) -> the introduction's
--- paragraphs as plain text, or nil.
-local function wikipedia_intro_paragraphs(language, title, transport, state)
+-- wikipediaIntro(language, title) -> the introduction as plain text (lines
+-- are paragraphs, mostly), or nil.
+local function wikipedia_intro(language, title, transport, state)
     local host = wikipedia_host(language, title)
     if not host then return nil end
     local data = get("https://" .. host .. "/w/api.php?action=query&format=json&formatversion=2"
@@ -380,24 +380,62 @@ local function wikipedia_intro_paragraphs(language, title, transport, state)
     local pages = data and type(data.query) == "table" and data.query.pages
     local page = type(pages) == "table" and pages[1]
     local extract = type(page) == "table" and not page.missing and page.extract
-    if type(extract) ~= "string" then return nil end
+    return type(extract) == "string" and extract or nil
+end
+
+-- Whitespace collapsed, for comparing texts.
+local function squash(text)
+    return (text:gsub("%s+", " "):match("^ ?(.-) ?$"))
+end
+
+-- bioText(summary, intro) -> the bio, paragraphs separated by a blank line;
+-- or nil. The introduction's first paragraph is replaced by the summary (see
+-- the top of this file). Its lines are mostly paragraphs, but a line break
+-- inside a template (a name's native spelling, its dates) breaks one: a line
+-- not ending a sentence is joined to the next. The summary's end is then
+-- found in the introduction, and what follows it kept, so a paragraph the
+-- summary already holds is not repeated whatever the line breaks.
+function M.bioText(summary, intro)
     local paragraphs = {}
-    for line in extract:gmatch("[^\n]+") do
-        line = line:match("^%s*(.-)%s*$")
-        if line ~= "" then paragraphs[#paragraphs + 1] = line end
+    if type(intro) == "string" then
+        local open = false
+        for line in intro:gmatch("[^\n]+") do
+            line = line:match("^%s*(.-)%s*$")
+            if line ~= "" then
+                if open then
+                    paragraphs[#paragraphs] = paragraphs[#paragraphs] .. " " .. line
+                else
+                    paragraphs[#paragraphs + 1] = line
+                end
+                open = not line:match("[%.!?…:\"”’'%)%]»]$")
+            end
+        end
     end
-    return #paragraphs > 0 and paragraphs or nil
+    if type(summary) ~= "string" or summary == "" then
+        return #paragraphs > 0 and table.concat(paragraphs, "\n\n") or nil
+    end
+    local rest = 2
+    local tail = squash(summary)
+    tail = tail:sub(math.max(1, #tail - 29))
+    local seen = ""
+    for i, paragraph in ipairs(paragraphs) do
+        seen = squash(seen .. " " .. paragraph)
+        if seen:sub(-#tail) == tail then
+            rest = i + 1
+            break
+        end
+    end
+    local bio = { summary }
+    for i = rest, #paragraphs do bio[#bio + 1] = paragraphs[i] end
+    return table.concat(bio, "\n\n")
 end
 
 -- wikipediaBio(language, title) -> the introduction, its first paragraph
--- being the page summary, paragraphs separated by a blank line; or nil.
+-- being the page summary; or nil.
 local function wikipedia_bio(language, title, transport, state)
     local summary = wikipedia_summary(language, title, transport, state)
-    local paragraphs = wikipedia_intro_paragraphs(language, title, transport, state)
-    if not paragraphs then return summary end
-    local bio = { summary or paragraphs[1] }
-    for i = 2, #paragraphs do bio[#bio + 1] = paragraphs[i] end
-    return table.concat(bio, "\n\n")
+    local intro = wikipedia_intro(language, title, transport, state)
+    return M.bioText(summary, intro)
 end
 
 -- fetch(name, opts) -> info | nil, reason. Looks the author up and saves what

@@ -219,6 +219,22 @@ describe("author info", function()
         assert.are.equal("First.\n\nSecond.", assert(fetch("Ursula K. Le Guin")).bio)
     end)
 
+    it("mends paragraphs a line break in a template split, without repeating the summary", function()
+        -- Anton Chekhov's English introduction, shortened.
+        local summary = "Anton Pavlovich Chekhov was a Russian playwright. "
+            .. "\"Medicine is my lawful wife,\" he once said, \"and literature is my mistress.\""
+        local intro = "Anton Pavlovich Chekhov (; Russian: Антон Павлович Чехов;\n"
+            .. "29 January 1860 – 15 July 1904) was a Russian playwright. "
+            .. "\"Medicine is my lawful wife,\" he once said, \"and literature is my mistress.\"\n"
+            .. "Chekhov renounced the theatre in 1896.\n"
+            .. "Chekhov began writing stories to earn money."
+        assert.are.equal(summary .. "\n\nChekhov renounced the theatre in 1896.\n\n"
+            .. "Chekhov began writing stories to earn money.", AuthorInfo.bioText(summary, intro))
+        -- A summary whose end differs from the introduction's replaces its
+        -- first paragraph.
+        assert.are.equal("Short.\n\nSecond.", AuthorInfo.bioText("Short.", "Long (1900) first.\nSecond."))
+    end)
+
     it("removes saved information", function()
         responses[OL_SEARCH] = { docs = { { key = "/authors/OL1A", name = "Saki", work_count = 100 } } }
         responses[OL_AUTHOR .. "OL1A.json"] = { birth_date = "1870" }
