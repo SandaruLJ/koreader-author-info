@@ -12,8 +12,9 @@ Browse your library by author, with a photo and a short bio of each author.
 - **Tap an author** to see their books in the file browser's display style.
   The back arrow returns to the authors, and the ⓘ button shows **Author
   information**.
-- **Hold an author** for **Author information**, or to find, replace or
-  remove their photo and information.
+- **Hold an author** for **Author information**, to find or replace their
+  photo or their information online (each on its own), or to remove their
+  photo.
 - **Author information** is laid out like KOReader's Book information:
   name, years, country, genres, notable works, bio (tap to read), photo (tap
   to display), number of books in the library, and sources.

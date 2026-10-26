@@ -43,6 +43,22 @@ describe("actions", function()
         }, Actions.plan(names, { photo = true, info = true }))
     end)
 
+    it("offers to find or replace the photo and the information separately", function()
+        local function texts(rows)
+            local list = {}
+            for _i, row in ipairs(rows) do list[#list + 1] = row[1].text end
+            return list
+        end
+        local noop = function() end
+        assert.are.same({ "Author information", "Find author information online", "Find author image online" },
+            texts(Actions.holdButtons("Saki", noop, noop, 1)))
+        has_photo["Saki"], has_info["Saki"] = true, true
+        assert.are.same({ "Author information", "Replace author information online",
+                "Replace author image online", "Remove author image" },
+            texts(Actions.holdButtons("Saki", noop, noop, 1)))
+        assert.are.same({}, Actions.holdButtons("Anonymous", noop, noop, 1))
+    end)
+
     it("keeps KOReader awake while held, and puts everything back after the last release", function()
         PluginShare.pause_auto_suspend = false
         Actions._hold_awake(true)

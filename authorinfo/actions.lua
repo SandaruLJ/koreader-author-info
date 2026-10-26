@@ -1,9 +1,10 @@
 -- The ways a reader asks for author photos and information (author_images
 -- and author_info do the finding and saving):
 --
---   findOne(name, on_done)    -- an author's hold menu: their photo and
---                                information, replacing what was there.
---   findInfo(name, on_done)   -- an author's hold menu: information only.
+--   findPhoto(name, on_done)  -- an author's hold menu: their photo,
+--                                replacing the one there.
+--   findInfo(name, on_done)   -- an author's hold menu: their information,
+--                                replacing what was there.
 --   findMissing(names, on_done, what) -- every author missing a photo
 --                                and/or information (what.photo, what.info),
 --                                after a confirm that says how many.
@@ -102,7 +103,7 @@ local function show_failure(result, name, what)
     elseif what == "info" then
         text = T(_("No information found for %1."), name)
     else
-        text = T(_("No photo or information found for %1."), name)
+        text = T(_("No photo found for %1."), name)
     end
     UIManager:show(InfoMessage:new{ text = text })
 end
@@ -168,19 +169,16 @@ local function find(name, want, on_done)
         hold_awake(false)
         UIManager:close(notice)
         if not completed then return end
-        if result.photo or result.info then notify(on_done) end
-        if want.photo and not result.photo and result.info then
-            UIManager:show(InfoMessage:new{
-                text = T(_("No photo found for %1, but found information about them."), name),
-            })
-        elseif not (result.photo or result.info) then
-            show_failure(result, name, want.photo and "both" or "info")
+        if result.photo or result.info then
+            notify(on_done)
+        else
+            show_failure(result, name, want.photo and "photo" or "info")
         end
     end)
 end
 
-function M.findOne(name, on_done)
-    find(name, { photo = true, info = true }, on_done)
+function M.findPhoto(name, on_done)
+    find(name, { photo = true }, on_done)
 end
 
 function M.findInfo(name, on_done)
@@ -417,23 +415,23 @@ function M.holdButtons(name, close_dialog, on_done, book_count)
             M.showDetails(name, book_count)
         end,
     }}}
+    -- The information's entries, then the photo's.
+    rows[#rows + 1] = {{
+        text = infos().has(name) and _("Replace author information online")
+            or _("Find author information online"),
+        callback = function()
+            close_dialog()
+            M.findInfo(name, on_done)
+        end,
+    }}
     local has_photo = images().has(name)
     rows[#rows + 1] = {{
         text = has_photo and _("Replace author image online") or _("Find author image online"),
         callback = function()
             close_dialog()
-            M.findOne(name, on_done)
+            M.findPhoto(name, on_done)
         end,
     }}
-    if not infos().has(name) then
-        rows[#rows + 1] = {{
-            text = _("Find author information online"),
-            callback = function()
-                close_dialog()
-                M.findInfo(name, on_done)
-            end,
-        }}
-    end
     if has_photo then
         rows[#rows + 1] = {{
             text = _("Remove author image"),
