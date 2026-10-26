@@ -23,33 +23,46 @@ describe("author info", function()
             .. "&prop=extracts"
     end
     local function intro(text) return { query = { pages = { { title = "x", extract = text } } } } end
-    local WD = "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims"
+    local WDQS = "https://query.wikidata.org/sparql"
     local WD_LABELS = "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels"
 
-    local function item(id, rank) return { rank = rank or "normal", mainsnak = { datavalue = { value = { id = id } } } } end
-    local function time(t) return { rank = "normal", mainsnak = { datavalue = { value = { time = t } } } } end
+    -- sparql{ Q1 = { field = { {id, label, ord}, ... } | time, sites = { lang = title } } }
+    -- -> the query service's answer: one row per value or page.
+    local function sparql(authors)
+        local rows = {}
+        local function uri(id) return { type = "uri", value = "http://www.wikidata.org/entity/" .. id } end
+        local function lit(v) return { type = "literal", value = tostring(v) } end
+        for item, fields in pairs(authors) do
+            rows[#rows + 1] = { item = uri(item), sitelinks = lit(0) }
+            for field, values in pairs(fields) do
+                if field == "sites" then
+                    for lang, title in pairs(values) do
+                        rows[#rows + 1] = { item = uri(item), lang = lit(lang), title = lit(title) }
+                    end
+                elseif type(values) == "string" then
+                    rows[#rows + 1] = { item = uri(item), field = lit(field), v = lit(values), vLabel = lit(values) }
+                else
+                    for _i, value in ipairs(values) do
+                        rows[#rows + 1] = { item = uri(item), field = lit(field), v = uri(value[1]),
+                            vLabel = lit(value[2] or value[1]), ord = value[3] and lit(value[3]) or nil }
+                    end
+                end
+            end
+        end
+        return { results = { bindings = rows } }
+    end
 
-    local le_guin_entity = { entities = { Q181659 = {
-        claims = {
-            P735 = { item("Q1") },
-            P734 = { item("Q2"), item("Q3") },
-            P27 = { item("Q30") },
-            P569 = { time("+1929-10-21T00:00:00Z") },
-            P570 = { time("+2018-01-22T00:00:00Z") },
-            P136 = { item("Q24925"), item("Q132311"), item("Q99", "deprecated") },
-            P800 = { item("Q7") },
-        },
-        sitelinks = { enwiki = { title = "Ursula K. Le Guin" } },
-    } } }
-    local le_guin_labels = { entities = {
-        Q1 = { labels = { mul = { value = "Ursula" } } },
-        Q2 = { labels = { en = { value = "Kroeber" } } },
-        Q3 = { labels = { en = { value = "Le Guin" } } },
-        Q30 = { labels = { en = { value = "United States" }, de = { value = "Vereinigte Staaten" } } },
-        Q24925 = { labels = { en = { value = "science fiction" } } },
-        Q132311 = { labels = { en = { value = "fantasy" } } },
-        Q7 = { labels = { en = { value = "The Dispossessed" } } },
-    } }
+    local le_guin = {
+        given = { { "Q1", "Ursula" } },
+        family = { { "Q3", "Le Guin" }, { "Q2", "Kroeber" } },
+        country = { { "Q30", "United States" } },
+        born = "1929-10-21T00:00:00Z",
+        died = "2018-01-22T00:00:00Z",
+        genres = { { "Q132311", "fantasy" }, { "Q24925", "science fiction" } },
+        works = { { "Q7", "The Dispossessed" } },
+        sites = { en = "Ursula K. Le Guin" },
+    }
+    local le_guin_wd = sparql({ Q181659 = le_guin })
 
     before_each(function()
         package.loaded["authorinfo/author_info"] = nil
@@ -76,8 +89,7 @@ describe("author info", function()
         responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
         responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" }, birth_date = "21 October 1929",
             bio = "Short Open Library bio that should not be used because Wikipedia has one." }
-        responses[WD] = le_guin_entity
-        responses[WD_LABELS] = le_guin_labels
+        responses[WDQS] = le_guin_wd
         responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
             { type = "standard", extract = "Ursula Kroeber Le Guin was an American author." }
         responses[intro_url("en")] = intro("Ursula Kroeber Le Guin (, commonly ; 1929–2018) was an American author.\n"
@@ -89,9 +101,9 @@ describe("author info", function()
         assert.are.equal("1929", info.born)
         assert.are.equal("2018", info.died)
         assert.are.same({ "United States" }, info.countries)
-        assert.are.same({ "Ursula" }, info.given) -- a "mul" label
-        assert.are.same({ "Kroeber", "Le Guin" }, info.family)
-        assert.are.same({ "science fiction", "fantasy" }, info.genres) -- deprecated dropped
+        assert.are.same({ "Ursula" }, info.given)
+        assert.are.same({ "Kroeber", "Le Guin" }, info.family) -- by item id, whatever the rows' order
+        assert.are.same({ "science fiction", "fantasy" }, info.genres)
         assert.are.same({ "The Dispossessed" }, info.works)
         -- The whole introduction, one blank line between paragraphs, its first
         -- paragraph the tidied summary rather than the extract's debris.
@@ -107,16 +119,19 @@ describe("author info", function()
     it("asks Wikidata and Wikipedia in KOReader's language first", function()
         responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
         responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" } }
-        local entity = le_guin_entity.entities.Q181659
-        entity.sitelinks.dewiki = { title = "Ursula K. Le Guin" }
-        responses[WD] = le_guin_entity
-        responses[WD_LABELS] = le_guin_labels
+        responses[WDQS] = sparql({ Q181659 = { country = { { "Q30", "Vereinigte Staaten" } },
+            sites = { de = "Ursula K. Le Guin", en = "Ursula K. Le Guin" } } })
         responses[intro_url("de")] = intro("Deutsch.")
         local info = assert(fetch("Ursula K. Le Guin", "de"))
         assert.are.same({ "Vereinigte Staaten" }, info.countries)
         assert.are.same({ lang = "de", title = "Ursula K. Le Guin" }, info.wikipedia)
         assert.are.equal("Deutsch.", info.bio)
-        entity.sitelinks.dewiki = nil
+        local query = ""
+        for _i, url in ipairs(requests) do
+            if url:find(WDQS, 1, true) then query = query .. url end
+        end
+        assert.is_truthy(query:find("de%2Cen%2Cmul", 1, true), "labels in German, else English")
+        assert.is_truthy(query:find("https%3A%2F%2Fde.wikipedia.org%2F", 1, true))
     end)
 
     it("falls back to the writer's Wikipedia page for the id, and Open Library's bio", function()
@@ -128,7 +143,7 @@ describe("author info", function()
         }
         responses[WP_QUERY] = { query = { pages = { { title = "Saki", description = "British writer (1870-1916)",
             pageprops = { wikibase_item = "Q311526" } } } } }
-        responses[WD] = { entities = { Q311526 = { claims = {}, sitelinks = {} } } }
+        responses[WDQS] = sparql({ Q311526 = { sites = {} } })
         local info = assert(fetch("Saki"))
         assert.are.equal("Q311526", info.wikidata)
         assert.are.equal("openlibrary", info.bio_source)
@@ -141,18 +156,19 @@ describe("author info", function()
     it("names historical states by the country they are now, once", function()
         responses[OL_SEARCH] = { docs = { { key = "/authors/OL2A", name = "Bram Stoker", work_count = 100 } } }
         responses[OL_AUTHOR .. "OL2A.json"] = { remote_ids = { wikidata = "Q36184" } }
-        responses[WD] = { entities = { Q36184 = { claims = {
-            P27 = { item("Q174193"), item("Q145"), item("Q27") },
-        }, sitelinks = {} } } }
-        responses[WD_LABELS] = { entities = {
-            Q145 = { labels = { en = { value = "United Kingdom" } } },
-            Q27 = { labels = { en = { value = "Ireland" } } },
-        } }
+        responses[WDQS] = sparql({ Q36184 = { country = {
+            { "Q174193", "United Kingdom of Great Britain and Ireland" }, { "Q145", "United Kingdom" }, { "Q27", "Ireland" },
+        } } })
         local info = assert(fetch("Bram Stoker"))
-        assert.are.same({ "United Kingdom", "Ireland" }, info.countries)
+        assert.are.same({ "Ireland", "United Kingdom" }, info.countries)
         for _i, url in ipairs(requests) do
-            assert.is_nil(url:find("Q174193", 1, true), "the historical state's label is not asked for")
+            assert.is_nil(url:find("props=labels", 1, true), "the query named every country")
         end
+
+        -- Only the historical state: today's country's label is asked for.
+        responses[WDQS] = sparql({ Q36184 = { country = { { "Q174193", "United Kingdom of Great Britain and Ireland" } } } })
+        responses[WD_LABELS] = { entities = { Q145 = { labels = { en = { value = "United Kingdom" } } } } }
+        assert.are.same({ "United Kingdom" }, assert(fetch("Bram Stoker")).countries)
     end)
 
     it("reports none or unreachable, and never looks up placeholders", function()
@@ -221,8 +237,7 @@ describe("author info", function()
     it("keeps nothing from a lookup that was rate limited or cut short, so it is tried again", function()
         responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
         responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" } }
-        responses[WD] = le_guin_entity
-        responses[WD_LABELS] = le_guin_labels
+        responses[WDQS] = le_guin_wd
         responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
             { type = "standard", extract = "Summary only." }
         local function failing(status)
@@ -238,6 +253,41 @@ describe("author info", function()
         assert.is_nil(info)
         assert.are.equal("incomplete", why)
         assert.is_false(AuthorInfo.has("Ursula K. Le Guin"))
+    end)
+
+    it("asks Wikidata about many authors at once", function()
+        responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
+        responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" } }
+        responses[WDQS] = sparql({ Q181659 = le_guin, Q42 = { country = { { "Q145", "United Kingdom" } } } })
+        local opts = { transport = respond, language = "en" }
+        local a = assert(AuthorInfo.begin("Ursula K. Le Guin", { transport = respond, language = "en", session = {} }))
+        local b = assert(AuthorInfo.begin("Douglas Adams", { transport = respond, language = "en", session = {} }))
+        b.wikidata = "Q42"
+        requests = {}
+        AuthorInfo.addWikidata({ a, b }, opts)
+        assert.are.equal(2, #requests, "the fields and pages queries, for both")
+        for _i, url in ipairs(requests) do
+            assert.is_truthy(url:find("wd%3AQ181659%20wd%3AQ42", 1, true))
+        end
+        assert.are.same({ "United States" }, a.info.countries)
+        assert.are.same({ "United Kingdom" }, b.info.countries)
+        assert(AuthorInfo.finish(a, opts))
+        assert.are.same({ "The Dispossessed" }, AuthorInfo.load("Ursula K. Le Guin").works)
+    end)
+
+    it("orders given names by their series ordinal, and keeps few genres and works", function()
+        local genres = {}
+        for i = 1, 7 do genres[i] = { "Q" .. (100 + i), "genre " .. i } end
+        local data = sparql({ Q1 = { given = { { "Q20", "Hugh", "2" }, { "Q10", "Hector", "1" } }, genres = genres } })
+        local parsed = AuthorInfo.parseWikidata(data)
+        assert.are.equal("Hector", parsed.Q1.given[1].label)
+        assert.are.equal("Hugh", parsed.Q1.given[2].label)
+        local job = { name = "Saki", wikidata = "Q1", state = {}, info = {} }
+        AuthorInfo.addWikidata({ job }, { language = "en", transport = function()
+            return { status = 200, headers = {}, body = JSON.encode(data) }
+        end })
+        assert.are.same({ "Hector", "Hugh" }, job.info.given)
+        assert.are.same({ "genre 1", "genre 2", "genre 3", "genre 4", "genre 5" }, job.info.genres)
     end)
 
     it("picks the family name the shown name contains, latest first", function()
@@ -263,8 +313,7 @@ describe("author info", function()
     it("uses the summary or the introduction alone when only one is there", function()
         responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
         responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" } }
-        responses[WD] = le_guin_entity
-        responses[WD_LABELS] = le_guin_labels
+        responses[WDQS] = le_guin_wd
         responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
             { type = "standard", extract = "Summary only." }
         assert.are.equal("Summary only.", assert(fetch("Ursula K. Le Guin")).bio)

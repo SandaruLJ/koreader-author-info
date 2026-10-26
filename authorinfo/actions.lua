@@ -214,16 +214,119 @@ function M.plan(names, what)
 end
 
 -- How long a pass waits when a source is still rate limiting, before
--- trying that author once more. If it is limited again, the pass stops.
+-- trying that step once more.
 M.RATE_LIMIT_PAUSE = 60
 
--- pause(Trapper, trap) -> false when stopped during the wait.
-local function pause(Trapper, trap)
+-- The bulk pass goes in three phases (see author_info's stages), each step a
+-- forked child:
+--   1. per author: the photo, and the start of the information lookup
+--      (Open Library, Wikipedia's page) as a job;
+--   2. Wikidata for the jobs, AuthorInfo's batch size at a time;
+--   3. per author: the bio, and saving the information.
+-- A step a source is still rate limiting is tried once more after a pause;
+-- if it is limited again, the pass stops.
+
+-- progress(state, text): shows the progress message, replacing the one before.
+local function progress(state, text)
+    local previous = state.notice
+    state.notice = InfoMessage:new{ text = text .. "\n\n" .. _("Tap to stop.") }
+    UIManager:show(state.notice)
+    if previous then UIManager:close(previous) end
+    UIManager:forceRePaint()
+end
+
+-- pause(Trapper, state) -> false when stopped during the wait.
+local function pause(Trapper, state)
+    progress(state, T(_("Open Library or Wikipedia asked to slow down. Waiting %1 seconds…"),
+        M.RATE_LIMIT_PAUSE))
     local completed = Trapper:dismissableRunInSubprocess(function()
         require("ffi/util").sleep(M.RATE_LIMIT_PAUSE)
         return "done"
-    end, trap, true)
+    end, state.notice, true)
     return completed
+end
+
+-- attempt(Trapper, state, text, step) -> completed, result. Shows text,
+-- then step() runs one step and returns completed, result; result.limited
+-- asks for another try.
+local function attempt(Trapper, state, text, step)
+    progress(state, text)
+    local completed, result = step()
+    if completed and result.limited then
+        if not pause(Trapper, state) then return false end
+        progress(state, text)
+        completed, result = step()
+    end
+    return completed, result
+end
+
+-- Phase 1: photo and job of one author.
+local function begin_step(Trapper, entry, trap)
+    local completed, out = Trapper:dismissableRunInSubprocess(function()
+        local session = {}
+        local lines = {}
+        if entry.photo then
+            local path, why = require("authorinfo/author_images").fetch(entry.name, { session = session })
+            lines[#lines + 1] = "photo " .. (path and "found" or "missed") .. " " .. tostring(why or "")
+        end
+        if entry.info then
+            local job, why = require("authorinfo/author_info").begin(entry.name, { session = session })
+            lines[#lines + 1] = job and ("job " .. require("json").encode(job))
+                or ("info missed " .. tostring(why or ""))
+        end
+        return table.concat(lines, "\n")
+    end, trap, true)
+    if not completed then return false end
+    local result = {}
+    out = tostring(out or "")
+    local photo_why = out:match("photo %a+ ([^\n]*)")
+    if out:match("photo found") then result.photo = true end
+    local encoded = out:match("job ([^\n]*)")
+    if encoded then
+        local ok, job = pcall(require("json").decode, encoded)
+        if ok and type(job) == "table" and type(job.state) == "table" then result.job = job end
+    end
+    local job_state = result.job and result.job.state
+    result.info_why = out:match("info missed ([^\n]*)")
+        or (entry.info and not result.job and "malformed") or nil
+    result.limited = photo_why == "rate_limited" or (job_state and job_state.limited) or false
+    result.no_storage = photo_why == "no storage"
+    local photo_unreachable = not entry.photo or photo_why == "unreachable"
+    local info_unreachable = not entry.info or (job_state and not job_state.answered)
+        or result.info_why == "unreachable"
+    result.unreachable = photo_unreachable and info_unreachable and true or false
+    return true, result
+end
+
+-- Phase 2: Wikidata for some jobs, which come back with it added.
+local function wikidata_step(Trapper, jobs, trap)
+    local completed, out = Trapper:dismissableRunInSubprocess(function()
+        local state = require("authorinfo/author_info").addWikidata(jobs, {})
+        return require("json").encode({ jobs = jobs, limited = state and state.limited or false })
+    end, trap, true)
+    if not completed then return false end
+    local ok, decoded = pcall(require("json").decode, tostring(out or ""))
+    if not ok or type(decoded) ~= "table" or type(decoded.jobs) ~= "table" then
+        return true, { jobs = jobs } -- as they were: finish still finds the rest
+    end
+    return true, { jobs = decoded.jobs, limited = decoded.limited == true }
+end
+
+-- Phase 3: the bio, and the information saved.
+local function finish_step(Trapper, job, trap)
+    local completed, out = Trapper:dismissableRunInSubprocess(function()
+        local info, why = require("authorinfo/author_info").finish(job, {})
+        return info and "found" or ("missed " .. tostring(why or ""))
+    end, trap, true)
+    if not completed then return false end
+    out = tostring(out or "")
+    local why = out:match("^missed (.*)$")
+    return true, {
+        info = out == "found",
+        limited = why == "rate_limited",
+        unreachable = why == "unreachable",
+        no_storage = why == "no storage",
+    }
 end
 
 -- run(todo, on_done) -- the bulk pass itself, once confirmed.
@@ -238,52 +341,69 @@ function M.run(todo, on_done)
         local Trapper = require("ui/trapper")
         running = true
         hold_awake(true)
+        local state = {}
         local photos_found, photos_asked, infos_found, infos_asked = 0, 0, 0, 0
-        local asked, unreachable_run = 0, 0
-        local stopped, offline, busy = false, false, false
-        local notice
-        local function show(text)
-            local previous = notice
-            notice = InfoMessage:new{ text = text .. "\n\n" .. _("Tap to stop.") }
-            UIManager:show(notice)
-            if previous then UIManager:close(previous) end
-            UIManager:forceRePaint()
+        local unreachable_run = 0
+        local stopped, offline, busy, no_storage = false, false, false, false
+        local done = 0 -- authors through phase 1
+        local jobs = {}
+
+        -- A step's outcome: false when the pass should stop.
+        local function outcome(completed, result)
+            if not completed then stopped = true; return false end
+            if result.limited then busy = true; return false end
+            if result.no_storage then no_storage = true; return false end
+            if result.unreachable then
+                unreachable_run = unreachable_run + 1
+                if unreachable_run >= M.MAX_UNREACHABLE then offline = true; return false end
+            else
+                unreachable_run = 0
+            end
+            return true
         end
+
         local ok_run, err_run = xpcall(function()
             for index, entry in ipairs(todo) do
-                local text = T(_("Looking up authors: %1 of %2"), index, #todo) .. "\n" .. entry.name
-                show(text)
-                local completed, result = lookup(Trapper, entry.name, notice, entry)
-                if completed and result.limited then
-                    show(T(_("Open Library or Wikipedia asked to slow down. Waiting %1 seconds…"),
-                        M.RATE_LIMIT_PAUSE))
-                    completed = pause(Trapper, notice)
-                    if completed then
-                        show(text)
-                        completed, result = lookup(Trapper, entry.name, notice, entry)
-                    end
-                end
-                if not completed then stopped = true; break end
-                if result.limited then busy = true; break end
-                asked = asked + 1
-                if entry.photo then
+                local completed, result = attempt(Trapper, state,
+                        T(_("Looking up authors: %1 of %2"), index, #todo) .. "\n" .. entry.name, function()
+                    return begin_step(Trapper, entry, state.notice)
+                end)
+                if completed and entry.photo then
                     photos_asked = photos_asked + 1
                     if result.photo then photos_found = photos_found + 1 end
                 end
-                if entry.info then
-                    infos_asked = infos_asked + 1
-                    if result.info then infos_found = infos_found + 1 end
+                if completed and not result.limited then
+                    if entry.info then
+                        infos_asked = infos_asked + 1
+                        if result.job then jobs[#jobs + 1] = result.job end
+                    end
+                    done = index
                 end
-                if result.unreachable then
-                    unreachable_run = unreachable_run + 1
-                    if unreachable_run >= M.MAX_UNREACHABLE then offline = true; break end
-                else
-                    unreachable_run = 0
-                end
-                if result.no_storage then break end
+                if not outcome(completed, result) then return end
+            end
+
+            local batch_size = require("authorinfo/author_info").WD_BATCH
+            for start = 1, #jobs, batch_size do
+                local batch = {}
+                for i = start, math.min(#jobs, start + batch_size - 1) do batch[#batch + 1] = jobs[i] end
+                local completed, result = attempt(Trapper, state, _("Looking up authors on Wikidata…"), function()
+                    return wikidata_step(Trapper, batch, state.notice)
+                end)
+                if not outcome(completed, result) then return end
+                for i, job in ipairs(result.jobs) do jobs[start + i - 1] = job end
+            end
+
+            unreachable_run = 0
+            for index, job in ipairs(jobs) do
+                local completed, result = attempt(Trapper, state,
+                        T(_("Looking up bios: %1 of %2"), index, #jobs) .. "\n" .. job.name, function()
+                    return finish_step(Trapper, job, state.notice)
+                end)
+                if completed and result.info then infos_found = infos_found + 1 end
+                if not outcome(completed, result) then return end
             end
         end, debug.traceback)
-        if notice then UIManager:close(notice) end
+        if state.notice then UIManager:close(state.notice) end
         hold_awake(false)
         running = false
         if not ok_run then logger.warn("authors: lookup pass failed", err_run) end
@@ -296,13 +416,18 @@ function M.run(todo, on_done)
             lines[#lines + 1] = T(_("Found information about %1 of %2 authors."), infos_found, infos_asked)
         end
         local parts = { #lines > 0 and table.concat(lines, "\n") or nil }
+        local unfinished = stopped or busy or offline or no_storage or not ok_run
         if offline then
             parts[#parts + 1] = unreachable_text()
         elseif busy then
             parts[#parts + 1] = busy_text()
+        elseif no_storage then
+            parts[#parts + 1] = _("Couldn't save to the author images or information folder.")
         end
-        if (stopped or busy) and asked < #todo then
-            parts[#parts + 1] = T(_("Stopped before %1 more."), #todo - asked)
+        if unfinished and done < #todo then
+            parts[#parts + 1] = T(_("Stopped before %1 more."), #todo - done)
+        elseif unfinished and infos_asked > infos_found then
+            parts[#parts + 1] = _("Stopped before saving all the information.")
         end
         UIManager:show(InfoMessage:new{ text = #parts > 0 and table.concat(parts, "\n\n") or _("Stopped.") })
     end)

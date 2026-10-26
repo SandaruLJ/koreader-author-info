@@ -8,9 +8,10 @@
 -- photo lookup uses (author_images; shared through opts.session):
 --   1. Open Library's author record: its bio, dates, and Wikidata id.
 --   2. Without a Wikidata id there, the writer's Wikipedia page's one.
---   3. Wikidata: names, country of citizenship, dates, genres, notable works,
---      and the title of the author's Wikipedia page, with labels in KOReader's
---      language where Wikidata has them.
+--   3. Wikidata, through its query service (many authors at once): names,
+--      country of citizenship, dates, genres, notable works, and the title of
+--      the author's Wikipedia page, with labels in KOReader's language where
+--      Wikidata has them.
 --   4. The bio: the introduction (the lead section, before the first
 --      heading) of that Wikipedia page in KOReader's language, else in
 --      English, else Open Library's bio. Its first paragraph is Wikipedia's
@@ -33,6 +34,9 @@ M.VERSION = 1
 local OL_HOST = "openlibrary.org"
 local WD_HOST = "www.wikidata.org"
 local WD_API = "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json"
+local WDQS_HOST = "query.wikidata.org"
+local WDQS = "https://query.wikidata.org/sparql?format=json&query="
+local SPARQL_HEADERS = { ["Accept"] = "application/sparql-results+json" }
 local JSON_HEADERS = { ["Accept"] = "application/json" }
 
 -- Wikidata properties we keep.
@@ -213,40 +217,6 @@ function M.year(text)
     return y and tostring(tonumber(y)) or nil
 end
 
--- statements(entity, property) -> its values in Wikidata's order, preferred
--- ones only when any are marked preferred, deprecated ones never.
-local function statements(entity, property)
-    local claims = type(entity) == "table" and type(entity.claims) == "table"
-        and entity.claims[property]
-    if type(claims) ~= "table" then return {} end
-    local preferred, normal = {}, {}
-    for _i, claim in ipairs(claims) do
-        local snak = type(claim) == "table" and claim.mainsnak
-        local value = type(snak) == "table" and type(snak.datavalue) == "table" and snak.datavalue.value
-        if value ~= nil and claim.rank ~= "deprecated" then
-            local list = claim.rank == "preferred" and preferred or normal
-            list[#list + 1] = value
-        end
-    end
-    return #preferred > 0 and preferred or normal
-end
-
-local function item_ids(entity, property, limit)
-    local ids = {}
-    for _i, value in ipairs(statements(entity, property)) do
-        if type(value) == "table" and type(value.id) == "string" and value.id:match("^Q%d+$") then
-            ids[#ids + 1] = value.id
-            if limit and #ids >= limit then break end
-        end
-    end
-    return ids
-end
-
-local function time_year(entity, property)
-    local value = statements(entity, property)[1]
-    return type(value) == "table" and M.year(value.time) or nil
-end
-
 -- label(entity, languages) -> its label in the first language it has.
 -- "mul" holds labels that are the same in all languages (most names).
 local function label(entity, languages)
@@ -316,29 +286,134 @@ end
 
 -- get(url, host, transport, state) -> decoded JSON | nil; how it went is
 -- noted in state (see AuthorImages.note).
-local function get(url, host, transport, state)
-    local data, err = Http.getJson(url, host, JSON_HEADERS, transport)
+local function get(url, host, transport, state, headers)
+    local data, err = Http.getJson(url, host, headers or JSON_HEADERS, transport)
     AuthorImages.note(state, data, err)
     return type(data) == "table" and data or nil
 end
 
-local function wikidata_entity(id, languages, transport, state)
-    local sites = {}
-    for _i, language in ipairs(languages) do
-        if language ~= "mul" then sites[#sites + 1] = language .. "wiki" end
+-- Authors asked about in one Wikidata query (one pass step), and labels
+-- asked for at once.
+local WD_BATCH = 50
+M.WD_BATCH = WD_BATCH
+
+-- wikidataQueries(ids, languages) -> the SPARQL queries asking Wikidata's
+-- query service for just what we keep of these authors (see parseWikidata):
+--   fields: the values of each property in P, labelled in languages. Only
+--           statements of the best rank (the preferred ones when any are
+--           marked so, never deprecated ones), as Wikidata's own "truthy"
+--           statements are.
+--   pages:  a row for each author Wikidata has, with their Wikipedia pages
+--           in languages.
+-- The whole entity (wbgetentities) would be 100-400 KB per well-known author,
+-- nearly all references; this is a few KB. Two queries, as one joining both
+-- (a UNION) is planned badly by the service and times out.
+function M.wikidataQueries(ids, languages)
+    local items, props, wikis = {}, {}, {}
+    for _i, id in ipairs(ids) do items[#items + 1] = "wd:" .. id end
+    local names = {}
+    for name in pairs(P) do names[#names + 1] = name end
+    table.sort(names)
+    for _i, name in ipairs(names) do
+        local id = P[name]
+        props[#props + 1] = string.format('("%s" p:%s ps:%s)', name, id, id)
     end
-    local data = get(WD_API .. "&props=claims%7Csitelinks&ids=" .. escape(id)
-        .. "&sitefilter=" .. escape(table.concat(sites, "|")), WD_HOST, transport, state)
-    local entity = data and type(data.entities) == "table" and data.entities[id]
-    return type(entity) == "table" and not entity.missing and entity or nil
+    for _i, language in ipairs(languages) do
+        if language ~= "mul" then
+            wikis[#wikis + 1] = string.format('("%s" <https://%s.wikipedia.org/>)', language, language)
+        end
+    end
+    local values = "VALUES ?item { " .. table.concat(items, " ") .. " }"
+    return {
+        fields = table.concat({
+            "SELECT ?item ?field ?v ?vLabel ?ord WHERE {",
+            "  " .. values,
+            "  VALUES (?field ?p ?ps) { " .. table.concat(props, " ") .. " }",
+            "  ?item ?p ?st . ?st a wikibase:BestRank ; ?ps ?v .",
+            "  OPTIONAL { ?st pq:P1545 ?ord }",
+            '  SERVICE wikibase:label { bd:serviceParam wikibase:language "'
+                .. table.concat(languages, ",") .. '". }',
+            "}",
+        }, "\n"),
+        pages = table.concat({
+            "SELECT ?item ?lang ?title WHERE {",
+            "  " .. values,
+            "  ?item wikibase:sitelinks ?sitelinks .",
+            "  OPTIONAL {",
+            "    VALUES (?lang ?wiki) { " .. table.concat(wikis, " ") .. " }",
+            "    ?page schema:about ?item ; schema:isPartOf ?wiki ; schema:name ?title .",
+            "  }",
+            "}",
+        }, "\n"),
+    }
 end
 
--- labels(ids, languages) -> id -> label, in batches of 50 as the API allows.
+local function binding(row, key)
+    local cell = type(row) == "table" and row[key]
+    return type(cell) == "table" and type(cell.value) == "string" and cell.value or nil
+end
+
+local function qid(uri)
+    return type(uri) == "string" and uri:match("/entity/(Q%d+)$") or nil
+end
+
+-- parseWikidata(data, into) -> id -> { field -> { {id, label, ord} | {time},
+-- ... }, sites -> lang -> title }, from either query's results, added to into
+-- when given. Values come in no
+-- particular order: they are ordered by their series ordinal (the order of
+-- given names), then by item id, so the same author always reads the same.
+function M.parseWikidata(data, into)
+    local rows = type(data) == "table" and type(data.results) == "table"
+        and type(data.results.bindings) == "table" and data.results.bindings or {}
+    local result, seen = into or {}, {}
+    for _i, row in ipairs(rows) do
+        local item = qid(binding(row, "item"))
+        if item then
+            local entry = result[item] or { sites = {} }
+            result[item] = entry
+            local field, v = binding(row, "field"), binding(row, "v")
+            local lang, title = binding(row, "lang"), binding(row, "title")
+            if lang and title then
+                entry.sites[lang] = title
+            elseif field and P[field] and v then
+                local id = qid(v)
+                local key = item .. " " .. field .. " " .. (id or v)
+                if not seen[key] and (id or field == "born" or field == "died") then
+                    seen[key] = true
+                    local label = binding(row, "vLabel")
+                    if label == id then label = nil end -- no label in any language asked
+                    entry[field] = entry[field] or {}
+                    table.insert(entry[field], {
+                        id = id, label = label, time = not id and v or nil,
+                        ord = tonumber(binding(row, "ord")),
+                    })
+                end
+            end
+        end
+    end
+    local function number(value) return tonumber(value.id and value.id:sub(2)) or 0 end
+    for _id, entry in pairs(result) do
+        for field, values in pairs(entry) do
+            if field ~= "sites" then
+                table.sort(values, function(a, b)
+                    if (a.ord or math.huge) ~= (b.ord or math.huge) then
+                        return (a.ord or math.huge) < (b.ord or math.huge)
+                    end
+                    if a.time or b.time then return (a.time or "") < (b.time or "") end
+                    return number(a) < number(b)
+                end)
+            end
+        end
+    end
+    return result
+end
+
+-- labels(ids, languages) -> id -> label, in batches.
 local function wikidata_labels(ids, languages, transport, state)
     local result = {}
-    for start = 1, #ids, 50 do
+    for start = 1, #ids, WD_BATCH do
         local batch = {}
-        for i = start, math.min(#ids, start + 49) do batch[#batch + 1] = ids[i] end
+        for i = start, math.min(#ids, start + WD_BATCH - 1) do batch[#batch + 1] = ids[i] end
         local data = get(WD_API .. "&props=labels&languages=" .. escape(table.concat(languages, "|"))
             .. "&ids=" .. escape(table.concat(batch, "|")), WD_HOST, transport, state)
         for id, entity in pairs(data and type(data.entities) == "table" and data.entities or {}) do
@@ -435,8 +510,15 @@ local function wikipedia_bio(language, title, transport, state)
     return M.bioText(summary, intro)
 end
 
--- fetch(name, opts) -> info | nil, reason. Looks the author up and saves what
--- was found, replacing anything saved before.
+-- A lookup goes in three stages, so that looking up many authors can ask
+-- Wikidata about up to WD_BATCH of them at once (actions does that, running
+-- each stage in a forked child):
+--   begin(name, opts) -> job        -- Open Library, and Wikipedia's page
+--                                      for the Wikidata id when needed
+--   addWikidata(jobs, opts)         -- Wikidata, for all the jobs at once
+--   finish(job, opts) -> info | nil, reason  -- the bio; saves the info
+-- A job is plain data (it is passed between the children as JSON).
+-- fetch(name, opts) does all three for one author.
 --   opts.session   -- shared with author_images.fetch for the same author
 --   opts.language  -- Wikipedia/Wikidata language (default KOReader's)
 --   opts.transport -- stubs the network (specs)
@@ -446,15 +528,24 @@ end
 --           "unreachable" (no source answered), "no storage"
 -- Nothing is saved from a lookup that was rate limited or incomplete, so
 -- finding missing information tries the author again.
-function M.fetch(name, opts)
+
+local function languages_for(opts)
+    local language = opts.language or M.uiLanguage()
+    return language == "en" and { "en", "mul" } or { language, "en", "mul" }
+end
+
+-- begin(name, opts) -> job | nil, reason
+function M.begin(name, opts)
     opts = opts or {}
     if AuthorImages.isPlaceholder(name) then return nil, "placeholder" end
     if not M.path(name) then return nil, "bad name" end
     local transport, session = opts.transport, opts.session or {}
     local state = {}
-    local language = opts.language or M.uiLanguage()
-    local languages = language == "en" and { "en", "mul" } or { language, "en", "mul" }
-    local info = { version = M.VERSION, name = name, fetched = os.time() }
+    local job = {
+        name = name,
+        state = state,
+        info = { version = M.VERSION, name = name, fetched = os.time() },
+    }
 
     -- 1. Open Library.
     local doc, _answered, ol_state = AuthorImages.searchOpenLibrary(name, transport, session)
@@ -462,8 +553,13 @@ function M.fetch(name, opts)
     local olid = AuthorImages.openLibraryId(doc)
     local record
     if olid then
-        info.openlibrary = olid
+        job.info.openlibrary = olid
         record = get("https://" .. OL_HOST .. "/authors/" .. olid .. ".json", OL_HOST, transport, state)
+    end
+    if record then
+        -- What finish needs of it.
+        local bio = M.openLibraryBio(record)
+        job.record = { bio = bio, born = M.year(record.birth_date), died = M.year(record.death_date) }
     end
     local wikidata_id = record and type(record.remote_ids) == "table" and record.remote_ids.wikidata
 
@@ -472,76 +568,120 @@ function M.fetch(name, opts)
         local page, _wp_answered, wp_state = AuthorImages.findWikipediaPage(name, transport, session)
         AuthorImages.merge(state, wp_state)
         wikidata_id = page and type(page.pageprops) == "table" and page.pageprops.wikibase_item
-        if page then info.wikipedia = { lang = "en", title = page.title } end
+        if page then job.info.wikipedia = { lang = "en", title = page.title } end
     end
-    if type(wikidata_id) ~= "string" or not wikidata_id:match("^Q%d+$") then wikidata_id = nil end
+    if type(wikidata_id) == "string" and wikidata_id:match("^Q%d+$") then job.wikidata = wikidata_id end
+    return job
+end
 
-    -- 3. Wikidata.
-    local entity = wikidata_id and wikidata_entity(wikidata_id, languages, transport, state)
-    if entity then
-        info.wikidata = wikidata_id
-        info.born = time_year(entity, P.born)
-        info.died = time_year(entity, P.died)
-        local wanted = {
-            given = item_ids(entity, P.given),
-            family = item_ids(entity, P.family),
-            countries = {},
-            genres = item_ids(entity, P.genres, MAX_GENRES),
-            works = item_ids(entity, P.works, MAX_WORKS),
-        }
-        local seen_country = {}
-        for _i, id in ipairs(item_ids(entity, P.country)) do
-            id = COUNTRY_SUCCESSORS[id] or id
-            if not seen_country[id] then
-                seen_country[id] = true
-                table.insert(wanted.countries, id)
+-- addWikidata(jobs, opts) -> state (see AuthorImages.note): 3. Wikidata, for
+-- every job with an id, WD_BATCH authors per query.
+function M.addWikidata(jobs, opts)
+    opts = opts or {}
+    local transport = opts.transport
+    local languages = languages_for(opts)
+    local ids, seen = {}, {}
+    for _i, job in ipairs(jobs) do
+        if job.wikidata and not seen[job.wikidata] then
+            seen[job.wikidata] = true
+            ids[#ids + 1] = job.wikidata
+        end
+    end
+    local state = {}
+    if #ids == 0 then return state end
+    local found = {}
+    for start = 1, #ids, WD_BATCH do
+        local queries = M.wikidataQueries({ unpack(ids, start, math.min(#ids, start + WD_BATCH - 1)) }, languages)
+        local fields = {}
+        M.parseWikidata(get(WDQS .. escape(queries.fields), WDQS_HOST, transport, state, SPARQL_HEADERS), fields)
+        local pages = M.parseWikidata(get(WDQS .. escape(queries.pages), WDQS_HOST, transport, state, SPARQL_HEADERS))
+        -- An author is found when the pages query names them.
+        for id, entry in pairs(pages) do
+            for field, values in pairs(fields[id] or {}) do
+                if field ~= "sites" then entry[field] = values end
+            end
+            found[id] = entry
+        end
+    end
+
+    -- Labels the query could not give: the countries historical states map to.
+    local labels, missing, asked = {}, {}, {}
+    for _id, entry in pairs(found) do
+        for _field, values in pairs(entry) do
+            for _i, value in ipairs(values) do
+                if value.id and value.label then labels[value.id] = value.label end
             end
         end
-        local all = {}
-        for _field, ids in pairs(wanted) do
-            for _i, id in ipairs(ids) do all[#all + 1] = id end
+    end
+    for _id, entry in pairs(found) do
+        for _i, value in ipairs(entry.country or {}) do
+            local successor = COUNTRY_SUCCESSORS[value.id]
+            if successor and not labels[successor] and not asked[successor] then
+                asked[successor] = true
+                missing[#missing + 1] = successor
+            end
         end
-        local labels = #all > 0 and wikidata_labels(all, languages, transport, state) or {}
-        for field, ids in pairs(wanted) do
-            local values, seen = {}, {}
-            for _i, id in ipairs(ids) do
-                local value = labels[id]
-                if value and not seen[value] then
-                    seen[value] = true
-                    values[#values + 1] = value
+    end
+    if #missing > 0 then
+        for id, value in pairs(wikidata_labels(missing, languages, transport, state)) do labels[id] = value end
+    end
+
+    local limits = { genres = MAX_GENRES, works = MAX_WORKS }
+    for _i, job in ipairs(jobs) do
+        local entry = job.wikidata and found[job.wikidata]
+        if entry then
+            local info = job.info
+            info.wikidata = job.wikidata
+            info.born = entry.born and M.year(entry.born[1].time)
+            info.died = entry.died and M.year(entry.died[1].time)
+            -- info field <- query field (P's names)
+            for field, from in pairs({ given = "given", family = "family", countries = "country",
+                    genres = "genres", works = "works" }) do
+                local values, seen_value = {}, {}
+                for _k, value in ipairs(entry[from] or {}) do
+                    local id = from == "country" and COUNTRY_SUCCESSORS[value.id] or value.id
+                    local text = labels[id]
+                    if text and not seen_value[text] then
+                        seen_value[text] = true
+                        values[#values + 1] = text
+                        if limits[field] and #values >= limits[field] then break end
+                    end
+                end
+                if #values > 0 then info[field] = values end
+            end
+            for _j, l in ipairs(languages) do
+                if entry.sites[l] then
+                    info.wikipedia = { lang = l, title = entry.sites[l] }
+                    break
                 end
             end
-            if #values > 0 then info[field] = values end
+            job.enwiki = entry.sites.en
         end
-        local sitelinks = type(entity.sitelinks) == "table" and entity.sitelinks or {}
-        for _i, l in ipairs(languages) do
-            local link = sitelinks[l .. "wiki"]
-            if type(link) == "table" and type(link.title) == "string" then
-                info.wikipedia = { lang = l, title = link.title }
-                break
-            end
-        end
+        if job.wikidata then AuthorImages.merge(job.state, state) end
     end
-    if record then
-        info.born = info.born or M.year(record.birth_date)
-        info.died = info.died or M.year(record.death_date)
-    end
+    return state
+end
 
-    -- 4. The bio.
+-- finish(job, opts) -> info | nil, reason: 4. the bio, then saves.
+function M.finish(job, opts)
+    opts = opts or {}
+    local transport = opts.transport
+    local state, info, record = job.state, job.info, job.record
+    if record then
+        info.born = info.born or record.born
+        info.died = info.died or record.died
+    end
     if info.wikipedia then
         info.bio = wikipedia_bio(info.wikipedia.lang, info.wikipedia.title, transport, state)
-        if not info.bio and info.wikipedia.lang ~= "en" and entity then
-            local link = type(entity.sitelinks) == "table" and entity.sitelinks.enwiki
-            if type(link) == "table" and link.title then
-                info.wikipedia = { lang = "en", title = link.title }
-                info.bio = wikipedia_bio("en", link.title, transport, state)
-            end
+        if not info.bio and info.wikipedia.lang ~= "en" and job.enwiki then
+            info.wikipedia = { lang = "en", title = job.enwiki }
+            info.bio = wikipedia_bio("en", job.enwiki, transport, state)
         end
         if info.bio then info.bio_source = "wikipedia" end
     end
-    if not info.bio then
-        info.bio = M.openLibraryBio(record)
-        if info.bio then info.bio_source = "openlibrary" end
+    if not info.bio and record and record.bio then
+        info.bio = record.bio
+        info.bio_source = "openlibrary"
     end
 
     if state.limited then return nil, "rate_limited" end
@@ -549,9 +689,18 @@ function M.fetch(name, opts)
     if not (info.bio or info.wikidata or record) then
         return nil, state.answered and "none" or "unreachable"
     end
-    if not save(name, info) then return nil, "no storage" end
-    logger.dbg("authors: saved info for", name, "wikidata =", tostring(info.wikidata))
+    if not save(job.name, info) then return nil, "no storage" end
+    logger.dbg("authors: saved info for", job.name, "wikidata =", tostring(info.wikidata))
     return info
+end
+
+-- fetch(name, opts) -> info | nil, reason. Looks the author up and saves what
+-- was found, replacing anything saved before.
+function M.fetch(name, opts)
+    local job, reason = M.begin(name, opts)
+    if not job then return nil, reason end
+    M.addWikidata({ job }, opts)
+    return M.finish(job, opts)
 end
 
 return M
