@@ -186,7 +186,7 @@ function M.run(todo, on_done)
             for index, entry in ipairs(todo) do
                 local previous = notice
                 notice = InfoMessage:new{
-                    text = T(_("Finding author images and information: %1 of %2"), index, #todo)
+                    text = T(_("Looking up authors: %1 of %2"), index, #todo)
                         .. "\n" .. entry.name .. "\n\n" .. _("Tap to stop."),
                 }
                 UIManager:show(notice)
