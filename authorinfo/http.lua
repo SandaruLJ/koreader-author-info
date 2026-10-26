@@ -6,7 +6,9 @@ local json = require("json")
 local logger = require("logger")
 
 local M = {}
-local USER_AGENT = "KOReader-AuthorInfo-plugin/1.0 (KOReader authorinfo plugin)"
+-- Open Library and Wikimedia ask for a contact in the User-Agent, and limit
+-- requests without one more strictly.
+local USER_AGENT = "KOReader-AuthorInfo-plugin/1.0 (sandarulj@outlook.com)"
 local BLOCK_TIMEOUT = 6
 local TOTAL_TIMEOUT = 12
 local MAX_RESPONSE_BYTES = 2 * 1024 * 1024
