@@ -11,8 +11,9 @@
 --   3. Wikidata: names, country of citizenship, dates, genres, notable works,
 --      and the title of the author's Wikipedia page, with labels in KOReader's
 --      language where Wikidata has them.
---   4. The bio: the summary (first paragraph) of that Wikipedia page in
---      KOReader's language, else in English, else Open Library's bio.
+--   4. The bio: the introduction (the lead section, before the first
+--      heading) of that Wikipedia page in KOReader's language, else in
+--      English, else Open Library's bio.
 
 local Http = require("authorinfo/http")
 local lfs = require("libs/libkoreader-lfs")
@@ -337,15 +338,25 @@ local function wikidata_labels(ids, languages, transport, state)
     return result
 end
 
-local function wikipedia_summary(language, title, transport, state)
+-- wikipediaIntro(language, title) -> the page's introduction as plain text,
+-- paragraphs separated by a blank line, or nil. Kept as Wikipedia writes it,
+-- pronunciation guides and dates in its first sentence included.
+local function wikipedia_intro(language, title, transport, state)
     if not language:match("^[a-z][a-z]?[a-z]?$") or type(title) ~= "string" then return nil end
     local host = language .. ".wikipedia.org"
-    local data = get("https://" .. host .. "/api/rest_v1/page/summary/"
-        .. escape(title:gsub(" ", "_")), host, transport, state)
-    local extract = data and data.type ~= "disambiguation" and data.extract
+    local data = get("https://" .. host .. "/w/api.php?action=query&format=json&formatversion=2"
+        .. "&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=" .. escape(title),
+        host, transport, state)
+    local pages = data and type(data.query) == "table" and data.query.pages
+    local page = type(pages) == "table" and pages[1]
+    local extract = type(page) == "table" and not page.missing and page.extract
     if type(extract) ~= "string" then return nil end
-    extract = extract:match("^%s*(.-)%s*$")
-    return extract ~= "" and extract or nil
+    local paragraphs = {}
+    for line in extract:gmatch("[^\n]+") do
+        line = line:match("^%s*(.-)%s*$")
+        if line ~= "" then paragraphs[#paragraphs + 1] = line end
+    end
+    return #paragraphs > 0 and table.concat(paragraphs, "\n\n") or nil
 end
 
 -- fetch(name, opts) -> info | nil, reason. Looks the author up and saves what
@@ -438,12 +449,12 @@ function M.fetch(name, opts)
 
     -- 4. The bio.
     if info.wikipedia then
-        info.bio = wikipedia_summary(info.wikipedia.lang, info.wikipedia.title, transport, state)
+        info.bio = wikipedia_intro(info.wikipedia.lang, info.wikipedia.title, transport, state)
         if not info.bio and info.wikipedia.lang ~= "en" and entity then
             local link = type(entity.sitelinks) == "table" and entity.sitelinks.enwiki
             if type(link) == "table" and link.title then
                 info.wikipedia = { lang = "en", title = link.title }
-                info.bio = wikipedia_summary("en", link.title, transport, state)
+                info.bio = wikipedia_intro("en", link.title, transport, state)
             end
         end
         if info.bio then info.bio_source = "wikipedia" end

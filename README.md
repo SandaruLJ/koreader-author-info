@@ -53,11 +53,12 @@ Books with several authors are listed under each of them.
   your own JPEG or PNG there under the same name.
 - Author information starts from the same Open Library match. Details
   (names, country, years, genres, notable works) come from Wikidata, with
-  labels in KOReader's language where available. The bio is the first
-  paragraph of the author's Wikipedia page in KOReader's language, else in
-  English, else Open Library's bio. Older authors' historical countries are
-  named by today's country (e.g. "United Kingdom of Great Britain and
-  Ireland" → United Kingdom) where that is unambiguous.
+  labels in KOReader's language where available. The bio is the
+  introduction of the author's Wikipedia page (everything before its first
+  heading) in KOReader's language, else in English, else Open Library's
+  bio. Older authors' historical countries are named by today's country
+  (e.g. "United Kingdom of Great Britain and Ireland" → United Kingdom)
+  where that is unambiguous.
 - Information is saved beside the photo, in
   `koreader/authorinfo/<Author Name>.json`.
 

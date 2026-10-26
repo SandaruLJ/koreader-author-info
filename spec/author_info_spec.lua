@@ -3,19 +3,26 @@ local JSON = require("json")
 describe("author info", function()
     local AuthorInfo, AuthorImages, dir, requests, responses
 
+    -- Answers from the longest registered prefix of the url, so a specific
+    -- endpoint wins over a shorter one it shares a prefix with.
     local function respond(url)
         requests[#requests + 1] = url
-        for prefix, data in pairs(responses) do
-            if url:sub(1, #prefix) == prefix then
-                return { status = 200, headers = {}, body = JSON.encode(data) }
-            end
+        local best
+        for prefix in pairs(responses) do
+            if url:sub(1, #prefix) == prefix and (not best or #prefix > #best) then best = prefix end
         end
+        if best then return { status = 200, headers = {}, body = JSON.encode(responses[best]) } end
         return { status = 404, headers = {}, body = "" }
     end
 
     local OL_SEARCH = "https://openlibrary.org/search/authors.json"
     local OL_AUTHOR = "https://openlibrary.org/authors/"
     local WP_QUERY = "https://en.wikipedia.org/w/api.php"
+    local function intro_url(language)
+        return "https://" .. language .. ".wikipedia.org/w/api.php?action=query&format=json&formatversion=2"
+            .. "&prop=extracts"
+    end
+    local function intro(text) return { query = { pages = { { title = "x", extract = text } } } } end
     local WD = "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=claims"
     local WD_LABELS = "https://www.wikidata.org/w/api.php?action=wbgetentities&format=json&props=labels"
 
@@ -71,8 +78,8 @@ describe("author info", function()
             bio = "Short Open Library bio that should not be used because Wikipedia has one." }
         responses[WD] = le_guin_entity
         responses[WD_LABELS] = le_guin_labels
-        responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
-            { type = "standard", extract = "Ursula Kroeber Le Guin was an American author." }
+        responses[intro_url("en")] = intro("Ursula Kroeber Le Guin (/ˈɜːrsələ/; 1929–2018) was an American author.\n"
+            .. "She is best known for Earthsea.\n\nShe won many awards.")
 
         local info = assert(fetch("Ursula K. Le Guin"))
         assert.are.equal("Q181659", info.wikidata)
@@ -84,11 +91,13 @@ describe("author info", function()
         assert.are.same({ "Kroeber", "Le Guin" }, info.family)
         assert.are.same({ "science fiction", "fantasy" }, info.genres) -- deprecated dropped
         assert.are.same({ "The Dispossessed" }, info.works)
-        assert.are.equal("Ursula Kroeber Le Guin was an American author.", info.bio)
+        -- The whole introduction, as written, one blank line between paragraphs.
+        assert.are.equal("Ursula Kroeber Le Guin (/ˈɜːrsələ/; 1929–2018) was an American author.\n\n"
+            .. "She is best known for Earthsea.\n\nShe won many awards.", info.bio)
         assert.are.equal("wikipedia", info.bio_source)
         assert.are.same(info, AuthorInfo.load("Ursula K. Le Guin"))
         for _i, url in ipairs(requests) do
-            assert.is_nil(url:find(WP_QUERY, 1, true), "no Wikipedia search when Open Library has the id")
+            assert.is_nil(url:find("prop=pageimages", 1, true), "no Wikipedia search when Open Library has the id")
         end
     end)
 
@@ -99,7 +108,7 @@ describe("author info", function()
         entity.sitelinks.dewiki = { title = "Ursula K. Le Guin" }
         responses[WD] = le_guin_entity
         responses[WD_LABELS] = le_guin_labels
-        responses["https://de.wikipedia.org/api/rest_v1/page/summary/"] = { type = "standard", extract = "Deutsch." }
+        responses[intro_url("de")] = intro("Deutsch.")
         local info = assert(fetch("Ursula K. Le Guin", "de"))
         assert.are.same({ "Vereinigte Staaten" }, info.countries)
         assert.are.same({ lang = "de", title = "Ursula K. Le Guin" }, info.wikipedia)
