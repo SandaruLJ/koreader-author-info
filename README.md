@@ -61,9 +61,11 @@ Books with several authors are listed under each of them.
   labels in KOReader's language where available. The bio is the
   introduction of the author's Wikipedia page (everything before its first
   heading) in KOReader's language, else in English, else Open Library's
-  bio. Older authors' historical countries are named by today's country
-  (e.g. "United Kingdom of Great Britain and Ireland" → United Kingdom)
-  where that is unambiguous.
+  bio. Its first paragraph is Wikipedia's tidied page summary, which leaves
+  out the brackets after the name (dates, pronunciation). Older authors'
+  historical countries are named by today's country (e.g. "United Kingdom
+  of Great Britain and Ireland" → United Kingdom) where that is
+  unambiguous.
 - Information is saved beside the photo, in
   `koreader/authorinfo/<Author Name>.json`.
 

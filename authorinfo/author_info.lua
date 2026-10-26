@@ -13,7 +13,11 @@
 --      language where Wikidata has them.
 --   4. The bio: the introduction (the lead section, before the first
 --      heading) of that Wikipedia page in KOReader's language, else in
---      English, else Open Library's bio.
+--      English, else Open Library's bio. Its first paragraph is Wikipedia's
+--      page summary, which drops the brackets after the name; the text
+--      extracts would leave them as debris ("Anne Brontë (, commonly ;"),
+--      since they remove English pronunciation templates from inside them.
+--      The other paragraphs come from the extracts.
 
 local Http = require("authorinfo/http")
 local lfs = require("libs/libkoreader-lfs")
@@ -347,12 +351,29 @@ local function wikidata_labels(ids, languages, transport, state)
     return result
 end
 
--- wikipediaIntro(language, title) -> the page's introduction as plain text,
--- paragraphs separated by a blank line, or nil. Kept as Wikipedia writes it,
--- pronunciation guides and dates in its first sentence included.
-local function wikipedia_intro(language, title, transport, state)
+local function wikipedia_host(language, title)
     if not language:match("^[a-z][a-z]?[a-z]?$") or type(title) ~= "string" then return nil end
-    local host = language .. ".wikipedia.org"
+    return language .. ".wikipedia.org"
+end
+
+-- wikipediaSummary(language, title) -> the page summary: its first
+-- paragraph, tidied by Wikipedia, or nil.
+local function wikipedia_summary(language, title, transport, state)
+    local host = wikipedia_host(language, title)
+    if not host then return nil end
+    local data = get("https://" .. host .. "/api/rest_v1/page/summary/"
+        .. escape((title:gsub(" ", "_"))), host, transport, state)
+    local extract = data and data.type ~= "disambiguation" and data.extract
+    if type(extract) ~= "string" then return nil end
+    extract = extract:match("^%s*(.-)%s*$")
+    return extract ~= "" and extract or nil
+end
+
+-- wikipediaIntroParagraphs(language, title) -> the introduction's
+-- paragraphs as plain text, or nil.
+local function wikipedia_intro_paragraphs(language, title, transport, state)
+    local host = wikipedia_host(language, title)
+    if not host then return nil end
     local data = get("https://" .. host .. "/w/api.php?action=query&format=json&formatversion=2"
         .. "&prop=extracts&exintro=1&explaintext=1&redirects=1&titles=" .. escape(title),
         host, transport, state)
@@ -365,7 +386,18 @@ local function wikipedia_intro(language, title, transport, state)
         line = line:match("^%s*(.-)%s*$")
         if line ~= "" then paragraphs[#paragraphs + 1] = line end
     end
-    return #paragraphs > 0 and table.concat(paragraphs, "\n\n") or nil
+    return #paragraphs > 0 and paragraphs or nil
+end
+
+-- wikipediaBio(language, title) -> the introduction, its first paragraph
+-- being the page summary, paragraphs separated by a blank line; or nil.
+local function wikipedia_bio(language, title, transport, state)
+    local summary = wikipedia_summary(language, title, transport, state)
+    local paragraphs = wikipedia_intro_paragraphs(language, title, transport, state)
+    if not paragraphs then return summary end
+    local bio = { summary or paragraphs[1] }
+    for i = 2, #paragraphs do bio[#bio + 1] = paragraphs[i] end
+    return table.concat(bio, "\n\n")
 end
 
 -- fetch(name, opts) -> info | nil, reason. Looks the author up and saves what
@@ -458,12 +490,12 @@ function M.fetch(name, opts)
 
     -- 4. The bio.
     if info.wikipedia then
-        info.bio = wikipedia_intro(info.wikipedia.lang, info.wikipedia.title, transport, state)
+        info.bio = wikipedia_bio(info.wikipedia.lang, info.wikipedia.title, transport, state)
         if not info.bio and info.wikipedia.lang ~= "en" and entity then
             local link = type(entity.sitelinks) == "table" and entity.sitelinks.enwiki
             if type(link) == "table" and link.title then
                 info.wikipedia = { lang = "en", title = link.title }
-                info.bio = wikipedia_intro("en", link.title, transport, state)
+                info.bio = wikipedia_bio("en", link.title, transport, state)
             end
         end
         if info.bio then info.bio_source = "wikipedia" end

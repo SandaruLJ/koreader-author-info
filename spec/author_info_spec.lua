@@ -78,7 +78,9 @@ describe("author info", function()
             bio = "Short Open Library bio that should not be used because Wikipedia has one." }
         responses[WD] = le_guin_entity
         responses[WD_LABELS] = le_guin_labels
-        responses[intro_url("en")] = intro("Ursula Kroeber Le Guin (/ˈɜːrsələ/; 1929–2018) was an American author.\n"
+        responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
+            { type = "standard", extract = "Ursula Kroeber Le Guin was an American author." }
+        responses[intro_url("en")] = intro("Ursula Kroeber Le Guin (, commonly ; 1929–2018) was an American author.\n"
             .. "She is best known for Earthsea.\n\nShe won many awards.")
 
         local info = assert(fetch("Ursula K. Le Guin"))
@@ -91,8 +93,9 @@ describe("author info", function()
         assert.are.same({ "Kroeber", "Le Guin" }, info.family)
         assert.are.same({ "science fiction", "fantasy" }, info.genres) -- deprecated dropped
         assert.are.same({ "The Dispossessed" }, info.works)
-        -- The whole introduction, as written, one blank line between paragraphs.
-        assert.are.equal("Ursula Kroeber Le Guin (/ˈɜːrsələ/; 1929–2018) was an American author.\n\n"
+        -- The whole introduction, one blank line between paragraphs, its first
+        -- paragraph the tidied summary rather than the extract's debris.
+        assert.are.equal("Ursula Kroeber Le Guin was an American author.\n\n"
             .. "She is best known for Earthsea.\n\nShe won many awards.", info.bio)
         assert.are.equal("wikipedia", info.bio_source)
         assert.are.same(info, AuthorInfo.load("Ursula K. Le Guin"))
@@ -201,6 +204,19 @@ describe("author info", function()
         assert.are.equal("1929", AuthorInfo.year("+1929-10-21T00:00:00Z"))
         assert.are.equal("1870", AuthorInfo.year("c. 1870"))
         assert.is_nil(AuthorInfo.year("-0500-01-01T00:00:00Z"))
+    end)
+
+    it("uses the summary or the introduction alone when only one is there", function()
+        responses[OL_SEARCH] = { docs = { { key = "/authors/OL31353A", name = "Ursula K. Le Guin", work_count = 300 } } }
+        responses[OL_AUTHOR .. "OL31353A.json"] = { remote_ids = { wikidata = "Q181659" } }
+        responses[WD] = le_guin_entity
+        responses[WD_LABELS] = le_guin_labels
+        responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] =
+            { type = "standard", extract = "Summary only." }
+        assert.are.equal("Summary only.", assert(fetch("Ursula K. Le Guin")).bio)
+        responses["https://en.wikipedia.org/api/rest_v1/page/summary/Ursula_K._Le_Guin"] = nil
+        responses[intro_url("en")] = intro("First.\nSecond.")
+        assert.are.equal("First.\n\nSecond.", assert(fetch("Ursula K. Le Guin")).bio)
     end)
 
     it("removes saved information", function()
