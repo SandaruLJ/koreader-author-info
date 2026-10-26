@@ -45,6 +45,7 @@ local function header_value(headers, wanted)
     for key, value in pairs(headers) do
         if type(key) == "string" and key:lower() == wanted then return value end
     end
+    return nil -- explicitly: tonumber() of no value at all is an error
 end
 
 local function ca_bundle(https)

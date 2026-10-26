@@ -184,6 +184,16 @@ describe("author info", function()
         assert.is_nil(err)
         assert.is_true(data.ok)
         assert.are.same({ 10, 10 }, waited) -- the server asked for 30 s; capped
+
+        -- No Retry-After: a short wait of our own.
+        waited, calls = {}, 0
+        data = require("authorinfo/http").getJson("https://openlibrary.org/x", "openlibrary.org", {}, function()
+            calls = calls + 1
+            if calls < 2 then return { status = 429, headers = {}, body = "" } end
+            return { status = 200, headers = {}, body = "{\"ok\":true}" }
+        end)
+        assert.is_true(data.ok)
+        assert.are.same({ 2 }, waited)
     end)
 
     it("picks the family name the shown name contains, latest first", function()
