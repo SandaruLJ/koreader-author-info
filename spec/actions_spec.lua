@@ -42,4 +42,40 @@ describe("actions", function()
             { name = "Terry Pratchett", photo = true, info = false },
         }, Actions.plan(names, { photo = true, info = true }))
     end)
+
+    it("keeps KOReader awake while held, and puts everything back after the last release", function()
+        PluginShare.pause_auto_suspend = false
+        Actions._hold_awake(true)
+        assert.is_true(PluginShare.pause_auto_suspend)
+        assert.are.equal(1, standby)
+        Actions._hold_awake(true) -- a single lookup during a pass
+        Actions._hold_awake(false)
+        assert.is_true(PluginShare.pause_auto_suspend, "still held by the pass")
+        Actions._hold_awake(false)
+        assert.is_false(PluginShare.pause_auto_suspend)
+        assert.are.equal(0, standby)
+        assert.are.same({}, executed, "no Kindle commands elsewhere")
+        Actions._hold_awake(false) -- an extra release changes nothing
+        assert.are.equal(0, standby)
+    end)
+
+    it("turns a Kindle's screensaver off while held, as Keep alive does", function()
+        kindle = true
+        Actions._hold_awake(true)
+        assert.is_true(PluginShare.keepalive)
+        assert.are.same({ "lipc-set-prop com.lab126.powerd preventScreenSaver 1" }, executed)
+        Actions._hold_awake(false)
+        assert.is_false(PluginShare.keepalive)
+        assert.are.same({ "lipc-set-prop com.lab126.powerd preventScreenSaver 1",
+            "lipc-set-prop com.lab126.powerd preventScreenSaver 0" }, executed)
+    end)
+
+    it("leaves a Kindle alone when Keep alive is already on", function()
+        kindle = true
+        PluginShare.keepalive = true
+        Actions._hold_awake(true)
+        Actions._hold_awake(false)
+        assert.are.same({}, executed)
+        assert.is_true(PluginShare.keepalive)
+    end)
 end)

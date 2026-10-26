@@ -17,7 +17,8 @@
 -- Lookups wait for Wi-Fi the KOReader way (runWhenOnline asks; nothing
 -- connects by itself) and run each author in a forked child, so the UI keeps
 -- answering and tapping the progress message stops the work. Within a child,
--- the photo and information lookups share their first requests.
+-- the photo and information lookups share their first requests. The device
+-- is kept awake while they run (hold_awake).
 
 local ConfirmBox = require("ui/widget/confirmbox")
 local InfoMessage = require("ui/widget/infomessage")
@@ -106,21 +107,50 @@ local function show_failure(result, name, what)
     UIManager:show(InfoMessage:new{ text = text })
 end
 
--- hold_awake(on): a pass over a few hundred authors runs for minutes, and the
--- device must not suspend in the middle of one.
-local held_prev
+-- hold_awake(on): keeps the device from sleeping while lookups run (a pass
+-- over a few hundred authors takes many minutes, with nobody touching the
+-- screen), the way KOReader's Keep alive plugin does:
+--   * KOReader's own auto-suspend waits (PluginShare.pause_auto_suspend),
+--     and standby is prevented;
+--   * on a Kindle, whose power daemon sleeps on its own after a while
+--     without input, its screensaver is turned off, and
+--     PluginShare.keepalive tells KOReader's auto-suspend to leave the
+--     daemon's timer alone, as Keep alive does.
+-- Holds nest; everything is put back when the last one is released. A Kindle
+-- whose Keep alive is already on is left as it is.
+local holds = 0
+local saved = {}
 local function hold_awake(on)
     local ok_share, PluginShare = pcall(require, "pluginshare")
-    if on and held_prev == nil then
-        held_prev = (ok_share and PluginShare.pause_auto_suspend) and true or false
-        if ok_share then PluginShare.pause_auto_suspend = true end
+    local ok_device, Device = pcall(require, "device")
+    local kindle = ok_device and Device and type(Device.isKindle) == "function" and Device:isKindle()
+    if on then
+        holds = holds + 1
+        if holds > 1 then return end
+        if ok_share then
+            saved.pause = PluginShare.pause_auto_suspend
+            PluginShare.pause_auto_suspend = true
+        end
+        if kindle and ok_share and not PluginShare.keepalive then
+            saved.kindle = true
+            PluginShare.keepalive = true
+            os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver 1")
+        end
         pcall(function() UIManager:preventStandby() end)
-    elseif not on and held_prev ~= nil then
-        if ok_share then PluginShare.pause_auto_suspend = held_prev end
-        held_prev = nil
+    else
+        if holds == 0 then return end
+        holds = holds - 1
+        if holds > 0 then return end
+        if ok_share then PluginShare.pause_auto_suspend = saved.pause end
+        if saved.kindle then
+            os.execute("lipc-set-prop com.lab126.powerd preventScreenSaver 0")
+            if ok_share then PluginShare.keepalive = false end
+        end
+        saved = {}
         pcall(function() UIManager:allowStandby() end)
     end
 end
+M._hold_awake = hold_awake -- for specs
 
 -- find(name, want, on_done): one author, with a message while it runs.
 local function find(name, want, on_done)
@@ -133,7 +163,9 @@ local function find(name, want, on_done)
         }
         UIManager:show(notice)
         UIManager:forceRePaint()
+        hold_awake(true)
         local completed, result = lookup(Trapper, name, notice, want)
+        hold_awake(false)
         UIManager:close(notice)
         if not completed then return end
         if result.photo or result.info then notify(on_done) end

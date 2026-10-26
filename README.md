@@ -35,7 +35,8 @@ Browse your library by author, with a photo and a short bio of each author.
   - **Name position** (in the grid): below the photo, or on the photo in
     white on a black band across its bottom.
   - **Find missing:** look up the images, information, or both, of the
-    authors shown that don't have them yet.
+    authors shown that don't have them yet. The device is kept awake until
+    the lookup finishes.
   - **Clear:** delete the saved images, information, or both, of the
     authors shown (images include ones you added yourself). Use Find
     missing afterwards to look them up afresh.
