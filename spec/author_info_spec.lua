@@ -194,6 +194,22 @@ describe("author info", function()
         end)
         assert.is_true(data.ok)
         assert.are.same({ 2 }, waited)
+
+        -- No reply (a timeout): tried once more at once, not again and again.
+        waited, calls = {}, 0
+        local data2 = require("authorinfo/http").getJson("https://openlibrary.org/x", "openlibrary.org", {}, function()
+            calls = calls + 1
+            if calls == 1 then return nil, { kind = "network" } end
+            return { status = 200, headers = {}, body = "{\"ok\":true}" }
+        end)
+        assert.is_true(data2.ok)
+        assert.are.same({}, waited)
+        calls = 0
+        require("authorinfo/http").getJson("https://openlibrary.org/x", "openlibrary.org", {}, function()
+            calls = calls + 1
+            return nil, { kind = "network" }
+        end)
+        assert.are.equal(2, calls)
     end)
 
     it("picks the family name the shown name contains, latest first", function()

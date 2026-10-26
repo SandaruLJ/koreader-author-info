@@ -219,7 +219,8 @@ function M.request(options)
     pcall(socketutil.reset_timeout, socketutil)
     if oversized then return nil, M.failure("malformed") end
     if not ok_request or result == nil or tonumber(status) == nil then
-        logger.warn("authors: request failed host=", options.host)
+        logger.warn("authors: request failed host=", options.host, "error=",
+            tostring(ok_request and status or result))
         return nil, M.failure("network")
     end
     return {
@@ -278,9 +279,19 @@ function M.get(url, host, headers, transport, server_retries)
     local retries = math.max(0, math.floor(tonumber(server_retries) or 2))
     local retry_all_server_errors = server_retries ~= nil
     local response, err
+    local timed_out_before = false
     for attempt = 0, retries do
         response, err = request()
         local status = response and tonumber(response.status)
+        -- No reply at all, while online: most often a timeout. Open Library
+        -- sometimes takes over 20 s on a first request and answers a repeat
+        -- at once, so one more try, right away.
+        local timed_out = not response and type(err) == "table" and err.kind == "network"
+            and err.status == nil
+        if timed_out and not timed_out_before and attempt < retries then
+            timed_out_before = true
+            goto continue
+        end
         local retryable = status == 503 or status == 429
             or (retry_all_server_errors and status and status >= 500 and status <= 599)
         if not retryable or attempt == retries then break end
@@ -290,6 +301,7 @@ function M.get(url, host, headers, transport, server_retries)
             and (tonumber(header_value(response.headers, "retry-after")) or 2 * (attempt + 1))
             or 1
         M.sleep(math.min(math.max(wait, 1), M.MAX_RETRY_WAIT))
+        ::continue::
     end
     return response, err
 end
