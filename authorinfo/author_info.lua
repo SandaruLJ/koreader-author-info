@@ -123,6 +123,15 @@ function M.has(name)
     return M.load(name) ~= nil
 end
 
+-- remove(name) -> true when saved information was deleted.
+function M.remove(name)
+    local path = type(name) == "string" and M.path(name)
+    if not path then return false end
+    local removed = os.remove(path) and true or false
+    cache[path] = nil
+    return removed
+end
+
 -- missing(names) -> the names worth looking up: not a placeholder, nothing saved.
 function M.missing(names)
     local result = {}

@@ -4,8 +4,12 @@
 --   findOne(name, on_done)    -- an author's hold menu: their photo and
 --                                information, replacing what was there.
 --   findInfo(name, on_done)   -- an author's hold menu: information only.
---   findAll(names, on_done)   -- every author missing a photo or information,
+--   findMissing(names, on_done, what) -- every author missing a photo
+--                                and/or information (what.photo, what.info),
 --                                after a confirm that says how many.
+--   clear(names, on_done, what) -- deletes the saved photos and/or
+--                                information of the given authors, after a
+--                                confirm.
 --   remove(name, on_done)     -- an author's hold menu, when a photo is set.
 --   showDetails(name, count)  -- "Author information", laid out like
 --                                KOReader's "Book information".
@@ -102,6 +106,22 @@ local function show_failure(result, name, what)
     UIManager:show(InfoMessage:new{ text = text })
 end
 
+-- hold_awake(on): a pass over a few hundred authors runs for minutes, and the
+-- device must not suspend in the middle of one.
+local held_prev
+local function hold_awake(on)
+    local ok_share, PluginShare = pcall(require, "pluginshare")
+    if on and held_prev == nil then
+        held_prev = (ok_share and PluginShare.pause_auto_suspend) and true or false
+        if ok_share then PluginShare.pause_auto_suspend = true end
+        pcall(function() UIManager:preventStandby() end)
+    elseif not on and held_prev ~= nil then
+        if ok_share then PluginShare.pause_auto_suspend = held_prev end
+        held_prev = nil
+        pcall(function() UIManager:allowStandby() end)
+    end
+end
+
 -- find(name, want, on_done): one author, with a message while it runs.
 local function find(name, want, on_done)
     if type(name) ~= "string" or name == "" or images().isPlaceholder(name) then return end
@@ -135,31 +155,18 @@ function M.findInfo(name, on_done)
     find(name, { info = true }, on_done)
 end
 
--- hold_awake(on): a pass over a few hundred authors runs for minutes, and the
--- device must not suspend in the middle of one.
-local held_prev
-local function hold_awake(on)
-    local ok_share, PluginShare = pcall(require, "pluginshare")
-    if on and held_prev == nil then
-        held_prev = (ok_share and PluginShare.pause_auto_suspend) and true or false
-        if ok_share then PluginShare.pause_auto_suspend = true end
-        pcall(function() UIManager:preventStandby() end)
-    elseif not on and held_prev ~= nil then
-        if ok_share then PluginShare.pause_auto_suspend = held_prev end
-        held_prev = nil
-        pcall(function() UIManager:allowStandby() end)
-    end
-end
-
 local running = false
 
--- plan(names) -> { {name, photo, info}, ... }: what each author is missing.
-function M.plan(names)
+-- plan(names, what) -> { {name, photo, info}, ... }: what each author is
+-- missing, of the kinds asked for (what.photo, what.info).
+function M.plan(names, what)
+    what = what or { photo = true, info = true }
     local AuthorImages, AuthorInfo = images(), infos()
     local todo = {}
     for _i, name in ipairs(names or {}) do
         if type(name) == "string" and not AuthorImages.isPlaceholder(name) then
-            local photo, info = not AuthorImages.has(name), not AuthorInfo.has(name)
+            local photo = what.photo and not AuthorImages.has(name) or false
+            local info = what.info and not AuthorInfo.has(name) or false
             if photo or info then todo[#todo + 1] = { name = name, photo = photo, info = info } end
         end
     end
@@ -234,16 +241,19 @@ function M.run(todo, on_done)
     end)
 end
 
-function M.findAll(names, on_done)
-    local todo = M.plan(names)
+function M.findMissing(names, on_done, what)
+    what = what or { photo = true, info = true }
+    local todo = M.plan(names, what)
     if #todo == 0 then
         local any_author = false
         for _i, name in ipairs(names or {}) do
             if not images().isPlaceholder(name) then any_author = true; break end
         end
+        local done = (what.photo and what.info) and _("Every author already has an image and information.")
+            or what.photo and _("Every author already has an image.")
+            or _("Every author already has information.")
         UIManager:show(InfoMessage:new{
-            text = any_author and _("Every author already has an image and information.")
-                or _("No authors found."),
+            text = any_author and done or _("No authors found."),
             timeout = 3,
         })
         return
@@ -253,12 +263,55 @@ function M.findAll(names, on_done)
         if entry.photo then photos = photos + 1 end
         if entry.info then info = info + 1 end
     end
-    local ask = T(_("Look up %1 authors online?"), #todo) .. "\n\n"
-        .. T(_("Missing photos: %1\nMissing information: %2"), photos, info)
+    local lines = { T(_("Look up %1 authors online?"), #todo), "" }
+    if what.photo then lines[#lines + 1] = T(_("Missing photos: %1"), photos) end
+    if what.info then lines[#lines + 1] = T(_("Missing information: %1"), info) end
+    lines[#lines + 1] = ""
+    if what.photo then lines[#lines + 1] = _("Photos come from Open Library or Wikipedia.") end
+    if what.info then lines[#lines + 1] = _("Information comes from Wikipedia, Open Library and Wikidata.") end
+    lines[#lines + 1] = _("What you already have is kept.")
     UIManager:show(ConfirmBox:new{
-        text = ask .. "\n\n" .. _("Photos come from Open Library or Wikipedia. Information comes from Wikipedia, Open Library and Wikidata. What you already have is kept."),
+        text = table.concat(lines, "\n"),
         ok_text = _("Look up"),
         ok_callback = function() M.run(todo, on_done) end,
+    })
+end
+
+-- clear(names, on_done, what): deletes the saved photos (what.photo) and/or
+-- information (what.info) of the given authors, after a confirm. Find
+-- missing then looks them up afresh.
+function M.clear(names, on_done, what)
+    local photos, info, targets = 0, 0, {}
+    for _i, name in ipairs(names or {}) do
+        if type(name) == "string" then
+            local photo = what.photo and images().has(name)
+            local has_info = what.info and infos().has(name)
+            if photo then photos = photos + 1 end
+            if has_info then info = info + 1 end
+            if photo or has_info then targets[#targets + 1] = name end
+        end
+    end
+    if #targets == 0 then
+        UIManager:show(InfoMessage:new{ text = _("There is nothing saved to clear."), timeout = 3 })
+        return
+    end
+    local lines = { T(_("Delete what is saved for %1 authors?"), #targets), "" }
+    if what.photo then lines[#lines + 1] = T(_("Photos: %1"), photos) end
+    if what.info then lines[#lines + 1] = T(_("Information: %1"), info) end
+    if what.photo then
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = _("This includes photos you put in the folder yourself.")
+    end
+    UIManager:show(ConfirmBox:new{
+        text = table.concat(lines, "\n"),
+        ok_text = _("Delete"),
+        ok_callback = function()
+            for _i, name in ipairs(targets) do
+                if what.photo then images().remove(name) end
+                if what.info then infos().remove(name) end
+            end
+            notify(on_done)
+        end,
     })
 end
 

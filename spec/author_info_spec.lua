@@ -203,6 +203,16 @@ describe("author info", function()
         assert.is_nil(AuthorInfo.year("-0500-01-01T00:00:00Z"))
     end)
 
+    it("removes saved information", function()
+        responses[OL_SEARCH] = { docs = { { key = "/authors/OL1A", name = "Saki", work_count = 100 } } }
+        responses[OL_AUTHOR .. "OL1A.json"] = { birth_date = "1870" }
+        assert(fetch("Saki"))
+        assert.is_true(AuthorInfo.has("Saki"))
+        assert.is_true(AuthorInfo.remove("Saki"))
+        assert.is_false(AuthorInfo.has("Saki"))
+        assert.is_false(AuthorInfo.remove("Saki"))
+    end)
+
     it("names the sources the information came from", function()
         assert.are.equal("Wikipedia (en), Wikidata", AuthorInfo.sourcesText({ bio_source = "wikipedia",
             wikipedia = { lang = "en" }, wikidata = "Q1" }))

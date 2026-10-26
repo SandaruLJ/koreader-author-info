@@ -595,11 +595,41 @@ function M.showAuthors(ui)
             }}
         end
         buttons[#buttons + 1] = {}
+        -- Find missing and Clear each choose images, information or both,
+        -- for the authors shown.
+        local function show_kinds_dialog(title, act)
+            local kinds_dialog
+            local function kind(text, what)
+                return {{
+                    text = text,
+                    callback = function()
+                        UIManager:close(kinds_dialog)
+                        act(names(), refresh, what)
+                    end,
+                }}
+            end
+            kinds_dialog = ButtonDialog:new{
+                title = title,
+                buttons = {
+                    kind(_("Images"), { photo = true }),
+                    kind(_("Information"), { info = true }),
+                    kind(_("Both"), { photo = true, info = true }),
+                },
+            }
+            UIManager:show(kinds_dialog)
+        end
         buttons[#buttons + 1] = {{
-            text = _("Find missing images and information"),
+            text = _("Find missing") .. "  \u{25B8}",
             callback = function()
                 UIManager:close(dialog)
-                Actions.findAll(names(), refresh)
+                show_kinds_dialog(_("Find missing"), Actions.findMissing)
+            end,
+        }}
+        buttons[#buttons + 1] = {{
+            text = _("Clear") .. "  \u{25B8}",
+            callback = function()
+                UIManager:close(dialog)
+                show_kinds_dialog(_("Clear"), Actions.clear)
             end,
         }}
         dialog = ButtonDialog:new{ buttons = buttons }
