@@ -11,6 +11,7 @@
 -- The grid reuses CoverBrowser's layout and paging (CoverMenu.updateItems and
 -- MosaicMenu._recalculateDimen); only the tile itself (AuthorTile) is ours.
 
+local BD = require("ui/bidi")
 local Blitbuffer = require("ffi/blitbuffer")
 local ButtonDialog = require("ui/widget/buttondialog")
 local CenterContainer = require("ui/widget/container/centercontainer")
@@ -256,17 +257,123 @@ local function book_items(files, cb)
     return items
 end
 
-function M.showBooks(ui, author, files, on_open)
+-- A book's hold menu, as Collections shows it and built from the same
+-- KOReader helpers, without "Remove from collection". Rows other plugins add
+-- to KOReader's book menus are left out, as their buttons redraw KOReader's
+-- own lists. on_update runs after a change to the book (status, reset),
+-- on_delete(file) after it is deleted, and on_leave when a button leaves the
+-- books (Show folder, Execute script).
+local function show_book_dialog(ui, file, title, on_update, on_delete, on_leave)
+    local BookList = require("ui/widget/booklist")
+    local filemanagerutil = require("apps/filemanager/filemanagerutil")
+    local dialog
+    local function close() UIManager:close(dialog) end
+    local function close_update() close(); on_update() end
+    local function close_leave() close(); on_leave() end
+    local is_currently_opened = file == (ui.document and ui.document.file)
+    local book_props = ui.coverbrowser and ui.coverbrowser:getBookInfo(file)
+    local been_opened, doc_settings_or_file
+    if is_currently_opened then
+        been_opened = true
+        doc_settings_or_file = ui.doc_settings
+        if not book_props then
+            book_props = ui.doc_props
+            book_props.has_cover = true
+        end
+    else
+        been_opened = BookList.hasBookBeenOpened(file)
+        if been_opened then
+            doc_settings_or_file = BookList.getDocSettings(file)
+            if not book_props then
+                book_props = ui.bookinfo.extendProps(doc_settings_or_file:readSetting("doc_props"), file)
+                book_props.has_cover = true
+            end
+        else
+            doc_settings_or_file = file
+        end
+    end
+    local buttons = {
+        filemanagerutil.genStatusButtonsRow(doc_settings_or_file, close_update),
+        {}, -- separator
+        {
+            filemanagerutil.genResetSettingsButton(doc_settings_or_file, close_update, is_currently_opened),
+            ui.collections:genAddToCollectionButton(file, close, close_update),
+        },
+    }
+    if Device:canExecuteScript(file) then
+        buttons[#buttons + 1] = { filemanagerutil.genExecuteScriptButton(file, close_leave) }
+    end
+    buttons[#buttons + 1] = {{
+        text = _("Delete"),
+        enabled = not is_currently_opened,
+        callback = function()
+            require("apps/filemanager/filemanager"):showDeleteFileDialog(file, function()
+                close()
+                on_delete(file)
+            end)
+        end,
+    }}
+    if been_opened then
+        local annotations = doc_settings_or_file:readSetting("annotations")
+        if annotations and #annotations > 0 then
+            buttons[#buttons + 1] = {
+                ui.collections:genExportHighlightsButton({ [file] = true }, close),
+                ui.collections:genBookmarkBrowserButton({ [file] = true }, close),
+            }
+        end
+    end
+    buttons[#buttons + 1] = {
+        filemanagerutil.genShowFolderButton(file, close_leave),
+        filemanagerutil.genBookInformationButton(doc_settings_or_file, book_props, close),
+    }
+    buttons[#buttons + 1] = {
+        filemanagerutil.genBookCoverButton(file, book_props, close),
+        filemanagerutil.genBookDescriptionButton(file, book_props, close),
+    }
+    dialog = ButtonDialog:new{
+        title = BD.filename(title),
+        title_align = "center",
+        buttons = buttons,
+    }
+    UIManager:show(dialog)
+end
+
+-- showBooks(ui, author, files, on_open, on_change): on_open runs when a book
+-- is opened (or the books are left for the file browser), on_change when the
+-- books view closes after a book's status changed or a book was deleted.
+function M.showBooks(ui, author, files, on_open, on_change)
     local BookList = require("ui/widget/booklist")
     local filemanagerutil = require("apps/filemanager/filemanagerutil")
     local cb = coverbrowser()
     local mode = display_mode(cb)
-    local count = #files
-    local books
+    local books, changed
+    local function subtitle()
+        return T(N_("1 book", "%1 books", #files), #files)
+    end
+    local function leave()
+        books.close_callback()
+        if on_open then on_open() end
+    end
+    local function update()
+        changed = true
+        books:updateItems(1, true)
+    end
+    -- The book leaves the list, and the list closes with its last book.
+    local function delete(file)
+        changed = true
+        for i = #files, 1, -1 do
+            if files[i] == file then table.remove(files, i) end
+        end
+        if #files == 0 then
+            books.close_callback()
+        else
+            books:switchItemTable(nil, book_items(files, cb), -1, nil, subtitle())
+        end
+    end
     local fields = {
         name = "authors_books",
         title = author,
-        subtitle = T(N_("1 book", "%1 books", count), count),
+        subtitle = subtitle(),
         item_table = book_items(files, cb),
         ui = ui,
         -- Author information, as Book information is for a book.
@@ -274,13 +381,10 @@ function M.showBooks(ui, author, files, on_open)
         onLeftButtonTap = function() Actions.showDetails(author, files) end,
         onReturn = function() books.close_callback() end,
         onMenuSelect = function(_self, item)
-            filemanagerutil.openFile(ui, item.file, function()
-                books.close_callback()
-                if on_open then on_open() end
-            end)
+            filemanagerutil.openFile(ui, item.file, leave)
         end,
         onMenuHold = function(_self, item)
-            if ui.bookinfo then ui.bookinfo:show(item.file) end
+            show_book_dialog(ui, item.file, item.text, update, delete, leave)
             return true
         end,
     }
@@ -301,7 +405,10 @@ function M.showBooks(ui, author, files, on_open)
     end
     books = BookList:new(fields)
     table.insert(books.paths, true) -- shows the back button, as Collections does
-    books.close_callback = function() UIManager:close(books) end
+    books.close_callback = function()
+        UIManager:close(books)
+        if changed and on_change then on_change() end
+    end
     UIManager:show(books)
     return books
 end
@@ -394,6 +501,12 @@ function M.showAuthors(ui)
     end
     local function refresh()
         if menu then menu:updateItems(1, true) end
+    end
+    -- After books changed (a status, a deletion): reads the library again
+    -- and redraws the list on the same page.
+    local function reload()
+        books = AuthorIndex.getBooks() or books
+        menu:switchItemTable(nil, build_items(), -1, nil, subtitle())
     end
 
     local function show_sort_dialog()
@@ -584,7 +697,7 @@ function M.showAuthors(ui)
         title_bar_left_icon = "appbar.menu",
         onLeftButtonTap = show_options_dialog,
         onMenuSelect = function(_self, item)
-            M.showBooks(ui, item.text, item.files, function() menu.close_callback() end)
+            M.showBooks(ui, item.text, item.files, function() menu.close_callback() end, reload)
         end,
         onMenuHold = function(_self, item)
             local dialog

@@ -16,7 +16,9 @@ Browse your library by author, with a photo and a short bio of each author.
   KOReader's standard list.
 - **Tap an author** to see their books in the file browser's display style.
   The back arrow returns to the authors, and the ⓘ button shows **Author
-  information**.
+  information**. Holding a book shows the hold menu Collections shows (status,
+  reset, collections, delete, show folder, book information…), without
+  "Remove from collection" and without buttons other plugins add there.
 - **Hold an author** to view, find or replace (online), or remove their
   information or their image, each on its own. Buttons with nothing to act
   on are greyed out.
