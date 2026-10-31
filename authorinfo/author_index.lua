@@ -34,7 +34,7 @@ local function home_prefix()
     return (home:gsub("/+$", "")) .. "/"
 end
 
--- rows() -> { {path, authors, series, language, keywords}, ... } from the
+-- rows() -> { {path, authors, series, keywords}, ... } from the
 -- cache; nil when CoverBrowser is not available.
 local function rows()
     local ok, BookInfoManager = pcall(require, "bookinfomanager")
@@ -43,7 +43,7 @@ local function rows()
     local conn = BookInfoManager.db_conn
     if not conn then return nil end
     local ok_exec, result = pcall(conn.exec, conn, [[
-        SELECT directory, filename, authors, series, language, keywords
+        SELECT directory, filename, authors, series, keywords
         FROM bookinfo
         WHERE in_progress = 0
           AND authors IS NOT NULL AND authors != ''
@@ -60,8 +60,7 @@ local function rows()
                 path = result[1][i] .. result[2][i],
                 authors = result[3][i],
                 series = result[4][i],
-                language = result[5][i],
-                keywords = result[6][i],
+                keywords = result[5][i],
             }
         end
     end

@@ -456,7 +456,7 @@ function M.showAuthors(ui)
                         apply()
                     end
                     -- Offer the values among what the other filters keep.
-                    if prop == "country" then
+                    if ViewOptions.isAuthorProp(prop) then
                         show_prop_values(
                             ViewOptions.authorValueCounts(ViewOptions.filterAuthors(books, filter), prop),
                             prop, pick,

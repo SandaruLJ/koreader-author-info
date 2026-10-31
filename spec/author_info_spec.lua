@@ -59,6 +59,8 @@ describe("author info", function()
         born = "1929-10-21T00:00:00Z",
         died = "2018-01-22T00:00:00Z",
         works = { { "Q7", "The Dispossessed" } },
+        writing_languages = { { "Q1860", "English" } },
+        spoken_languages = { { "Q1860", "English" }, { "Q150", "French" } },
         sites = { en = "Ursula K. Le Guin" },
     }
     local le_guin_wd = sparql({ Q181659 = le_guin })
@@ -103,6 +105,7 @@ describe("author info", function()
         assert.are.same({ "Ursula" }, info.given)
         assert.are.same({ "Kroeber", "Le Guin" }, info.family) -- by item id, whatever the rows' order
         assert.are.same({ "The Dispossessed" }, info.works)
+        assert.are.same({ "English" }, info.languages) -- writing languages over spoken ones
         -- The whole introduction, one blank line between paragraphs, its first
         -- paragraph the tidied summary rather than the extract's debris.
         assert.are.equal("Ursula Kroeber Le Guin was an American author.\n\n"
@@ -287,6 +290,16 @@ describe("author info", function()
         assert.are.same({ "Hector", "Hugh" }, job.info.given)
         assert.are.same({ "work 1", "work 2", "work 3", "work 4", "work 5", "work 6", "work 7", "work 8" },
             job.info.works)
+    end)
+
+    it("falls back to the languages an author spoke or wrote when Wikidata has no writing language", function()
+        local data = sparql({ Q1 = { spoken_languages = { { "Q7737", "Russian" }, { "Q150", "French" } },
+            sites = { en = "Leo Tolstoy" } } })
+        local job = { name = "Leo Tolstoy", wikidata = "Q1", state = {}, info = {} }
+        AuthorInfo.addWikidata({ job }, { language = "en", transport = function()
+            return { status = 200, headers = {}, body = JSON.encode(data) }
+        end })
+        assert.are.same({ "French", "Russian" }, job.info.languages) -- by item id
     end)
 
     it("picks the family name the shown name contains, latest first", function()

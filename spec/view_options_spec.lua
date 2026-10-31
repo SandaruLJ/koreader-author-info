@@ -36,8 +36,8 @@ describe("authors view options", function()
     -- Pratchett: one finished (/a), one new (/b). Gaiman: shares /a, and /c
     -- in progress. Christie: one abandoned (/d). Herron: one new (/e).
     local books = {
-        { path = "/a", authors = "Terry Pratchett\nNeil Gaiman", keywords = "Fantasy\nHumour", language = "EN" },
-        { path = "/b", authors = "Terry Pratchett", keywords = "Fantasy", language = "en" },
+        { path = "/a", authors = "Terry Pratchett\nNeil Gaiman", keywords = "Fantasy\nHumour" },
+        { path = "/b", authors = "Terry Pratchett", keywords = "Fantasy" },
         { path = "/c", authors = "Neil Gaiman", keywords = "Fantasy" },
         { path = "/d", authors = "Agatha Christie", keywords = "Mystery" },
         { path = "/e", authors = "Mick Herron", keywords = "Thriller" },
@@ -110,11 +110,11 @@ describe("authors view options", function()
         assert.are.same({ "Becky Chambers", "Ursula K. Le Guin", "Liu Cixin", "Saki" }, names(sorted))
     end)
 
-    it("filters by country from author information, listing all their books", function()
+    it("filters by language and country from author information, listing all their books", function()
         local infos = {
-            ["Terry Pratchett"] = { countries = { "United Kingdom" } },
-            ["Neil Gaiman"] = { countries = { "United Kingdom", "United States" } },
-            ["Agatha Christie"] = { countries = { "United Kingdom" } },
+            ["Terry Pratchett"] = { countries = { "United Kingdom" }, languages = { "English" } },
+            ["Neil Gaiman"] = { countries = { "United Kingdom", "United States" }, languages = { "English" } },
+            ["Agatha Christie"] = { countries = { "United Kingdom" }, languages = { "English", "French" } },
         }
         local infoOf = function(name) return infos[name] end
         assert.are.same({ ["Agatha Christie"] = { "/d" }, ["Neil Gaiman"] = { "/a", "/c" },
@@ -126,6 +126,15 @@ describe("authors view options", function()
             ViewOptions.authorValueCounts(ViewOptions.filterAuthors(books, {}, status_of, infoOf), "country", infoOf))
         assert.are.equal("Country: United States · Keywords: Fantasy",
             ViewOptions.describe({ country = "United States", keywords = "Fantasy" }))
+        assert.are.same({ ["Agatha Christie"] = { "/d" } },
+            shown(ViewOptions.filterAuthors(books, { language = "French", country = "United Kingdom" },
+                status_of, infoOf)))
+        assert.are.same({ { value = "English", count = 3 }, { value = "French", count = 1 } },
+            ViewOptions.authorValueCounts(ViewOptions.filterAuthors(books, {}, status_of, infoOf), "language", infoOf))
+        assert.are.equal("Language: French · Country: United Kingdom",
+            ViewOptions.describe({ language = "French", country = "United Kingdom" }))
+        assert.is_true(ViewOptions.isAuthorProp("language"))
+        assert.is_false(ViewOptions.isAuthorProp("keywords"))
     end)
 
     it("Read lists authors with a finished book, and only those books", function()
@@ -155,9 +164,11 @@ describe("authors view options", function()
             shown(ViewOptions.filterAuthors(books, { status = { new = true, reading = true } }, status_of)))
     end)
 
-    it("keyword and language filters keep matching books, case-insensitive for languages", function()
-        assert.are.same({ ["Terry Pratchett"] = { "/a", "/b" }, ["Neil Gaiman"] = { "/a" } },
-            shown(ViewOptions.filterAuthors(books, { keywords = "Fantasy", language = "en" }, status_of)))
+    it("the keyword filter keeps matching books", function()
+        assert.are.same({ ["Terry Pratchett"] = { "/a", "/b" }, ["Neil Gaiman"] = { "/a", "/c" } },
+            shown(ViewOptions.filterAuthors(books, { keywords = "Fantasy" }, status_of)))
+        assert.are.same({ ["Terry Pratchett"] = { "/a" }, ["Neil Gaiman"] = { "/a" } },
+            shown(ViewOptions.filterAuthors(books, { keywords = "Humour" }, status_of)))
         assert.are.same({ { value = "Fantasy", count = 3 }, { value = "Humour", count = 1 },
                 { value = "Mystery", count = 1 }, { value = "Thriller", count = 1 } },
             ViewOptions.valueCounts(books, "keywords"))

@@ -3,10 +3,12 @@
 -- step).
 --
 -- Filters, which all must match:
---   language, keywords -- one value each; an author is listed when any of
---                         their books has it, with only those books.
---   country            -- one value, from the author's information
---                         (author_info); all their books are listed.
+--   keywords           -- one value; an author is listed when any of their
+--                         books has it, with only those books.
+--   language, country  -- one value each, from the author's information
+--                         (author_info): the languages they wrote in, the
+--                         countries they were a citizen of. All their books
+--                         are listed.
 --   status             -- a set; an author is listed when any chosen status
 --                         applies:
 --     new, reading     -- has a book with that status (only those listed)
@@ -25,11 +27,15 @@ local M = {}
 local SETTINGS_KEY = "authorinfo_view"
 
 M.STATUSES = { "new", "reading", "unread", "read" }
-M.PROPS = { "language", "keywords" }
+M.PROPS = { "keywords" }
 
-M.AUTHOR_PROPS = { "country" }
+M.AUTHOR_PROPS = { "language", "country" }
 -- Where an author property's values are in author_info's records.
-local AUTHOR_FIELDS = { country = "countries" }
+local AUTHOR_FIELDS = { language = "languages", country = "countries" }
+
+function M.isAuthorProp(prop)
+    return AUTHOR_FIELDS[prop] ~= nil
+end
 
 local function known(list)
     local set = {}
@@ -79,12 +85,10 @@ end
 -- ---------------------------------------------------------------------
 
 -- propValues(book, prop) -> the values a book has for a metadata field.
--- Keywords may hold several, one per line; languages compare in lower case,
--- as Collections does.
+-- Keywords may hold several, one per line.
 function M.propValues(book, prop)
     local value = book[prop]
     if type(value) ~= "string" or value == "" then return {} end
-    if prop == "language" then return { value:lower() } end
     local values = {}
     for line in value:gmatch("[^\n]+") do
         line = line:match("^%s*(.-)%s*$")
@@ -138,16 +142,17 @@ end
 function M.filterAuthors(books, filter, statusOf, infoOf)
     filter = filter or {}
     local authors = AuthorIndex.getAuthors(books, props_matcher(filter))
-    if filter.country then
-        infoOf = infoOf or require("authorinfo/author_info").load
-        local kept = {}
-        for _i, author in ipairs(authors) do
-            local info = infoOf(author.name)
-            if has_value(info, "country", filter.country) then
-                kept[#kept + 1] = author
+    for _i, prop in ipairs(M.AUTHOR_PROPS) do
+        if filter[prop] then
+            infoOf = infoOf or require("authorinfo/author_info").load
+            local kept = {}
+            for _j, author in ipairs(authors) do
+                if has_value(infoOf(author.name), prop, filter[prop]) then
+                    kept[#kept + 1] = author
+                end
             end
+            authors = kept
         end
-        authors = kept
     end
     local wanted = filter.status
     if not wanted then return authors end
@@ -191,7 +196,7 @@ function M.filterAuthors(books, filter, statusOf, infoOf)
 end
 
 -- authorValueCounts(authors, prop, infoOf) -> { {value, count}, ... }: the
--- countries of the given authors, counting authors.
+-- languages or countries of the given authors, counting authors.
 function M.authorValueCounts(authors, prop, infoOf)
     infoOf = infoOf or require("authorinfo/author_info").load
     local counts, values = {}, {}

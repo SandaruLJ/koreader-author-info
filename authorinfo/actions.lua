@@ -616,6 +616,7 @@ function M.showDetails(name, files)
         { _("Born:"), info.born or n_a },
         { _("Died:"), info.died or n_a },
         { _("Country:"), list(info.countries) or n_a },
+        { _("Language:"), list(info.languages) or n_a },
         { _("Notable works:"), list(info.works) or n_a },
         { _("Bio:"), info.bio or n_a,
             callback = info.bio and function()

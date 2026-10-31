@@ -16,7 +16,7 @@ Browse your library by author, with a photo and a short bio of each author.
   information or their image, each on its own. Buttons with nothing to act
   on are greyed out.
 - **Author information** is laid out like KOReader's Book information:
-  name, years, country, notable works, bio (tap to read), photo (tap
+  name, years, country, language, notable works, bio (tap to read), photo (tap
   to display), number of books in the library, time spent reading them
   (from KOReader's Statistics, in your duration format), and sources. Tap the
   sources to read the author's full Wikipedia page in KOReader's Wikipedia
@@ -29,9 +29,10 @@ Browse your library by author, with a photo and a short bio of each author.
     name written "Le Guin, Ursula K." sorts by the part before the comma,
     and other names by the last word together with particles before it
     ("Walter de la Mare" → de la Mare), skipping suffixes like "Jr.".
-  - **Filter:** by language or keywords, as in Collections: an author is
-    shown when any of their books match, and only the matching books are
-    listed when you tap them. By the author's country, once their
+  - **Filter:** by keywords, as in Collections: an author is shown when
+    any of their books match, and only the matching books are listed when
+    you tap them. By the author's language (the languages they wrote in,
+    a rough guide to the literature they belong to) and country, once their
     information has been looked up. And by status:
     - **New** / **Reading:** authors with a book that is new or in progress.
     - **Read:** authors with at least one finished book.
@@ -66,8 +67,8 @@ Books with several authors are listed under each of them.
 - Photos are saved in `koreader/authorinfo/<Author Name>.jpg`. You can put
   your own JPEG or PNG there under the same name.
 - Author information starts from the same Open Library match. Details
-  (names, country, years, notable works) come from Wikidata, with
-  labels in KOReader's language where available. The bio is the
+  (names, country, languages, years, notable works) come from Wikidata,
+  with labels in KOReader's language where available. The bio is the
   introduction of the author's Wikipedia page (everything before its first
   heading) in KOReader's language, else in English, else Open Library's
   bio. Its first paragraph is Wikipedia's tidied page summary, which leaves

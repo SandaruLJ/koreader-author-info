@@ -1,5 +1,6 @@
 -- What we know about an author besides their photo: a short bio, their
--- country, birth and death years, given and family names and notable works. Saved as <data dir>/authorinfo/<author>.json, beside their photo
+-- country, writing languages, birth and death years, given and family names
+-- and notable works. Saved as <data dir>/authorinfo/<author>.json, beside their photo
 -- (author_images), one file per author,
 -- so each lookup (a forked child) writes only its own file.
 --
@@ -8,7 +9,8 @@
 --   1. Open Library's author record: its bio, dates, and Wikidata id.
 --   2. Without a Wikidata id there, the writer's Wikipedia page's one.
 --   3. Wikidata, through its query service (many authors at once): names,
---      country of citizenship, dates, notable works, and the title of
+--      country of citizenship, writing languages (or, when Wikidata has none,
+--      the languages they spoke or wrote), dates, notable works, and the title of
 --      the author's Wikipedia page, with labels in KOReader's language where
 --      Wikidata has them.
 --   4. The bio: the introduction (the lead section, before the first
@@ -46,6 +48,8 @@ local P = {
     born = "P569",
     died = "P570",
     works = "P800",
+    writing_languages = "P6886",
+    spoken_languages = "P1412",
 }
 -- Historical states, as Wikidata gives an older author's citizenship, and the
 -- country they are now ("United Kingdom of Great Britain and Ireland" ->
@@ -644,9 +648,13 @@ function M.addWikidata(jobs, opts)
             info.wikidata = job.wikidata
             info.born = entry.born and M.year(entry.born[1].time)
             info.died = entry.died and M.year(entry.died[1].time)
-            -- info field <- query field (P's names)
-            for field, from in pairs({ given = "given", family = "family", countries = "country",
-                    works = "works" }) do
+            -- info field <- the first query field (P's names) with values
+            for field, sources in pairs({ given = { "given" }, family = { "family" }, countries = { "country" },
+                    works = { "works" }, languages = { "writing_languages", "spoken_languages" } }) do
+                local from = sources[1]
+                for _k, source in ipairs(sources) do
+                    if entry[source] and #entry[source] > 0 then from = source; break end
+                end
                 local values, seen_value = {}, {}
                 for _k, value in ipairs(entry[from] or {}) do
                     local id = from == "country" and COUNTRY_SUCCESSORS[value.id] or value.id
