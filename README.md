@@ -16,7 +16,7 @@ Browse your library by author, with a photo and a short bio of each author.
   information or their image, each on its own. Buttons with nothing to act
   on are greyed out.
 - **Author information** is laid out like KOReader's Book information:
-  name, years, country, genres, notable works, bio (tap to read), photo (tap
+  name, years, country, notable works, bio (tap to read), photo (tap
   to display), number of books in the library, and sources.
 - The **☰ button** has:
   - **Sort by:** first name, last name, number of books or recently read,
@@ -65,7 +65,7 @@ Books with several authors are listed under each of them.
 - Photos are saved in `koreader/authorinfo/<Author Name>.jpg`. You can put
   your own JPEG or PNG there under the same name.
 - Author information starts from the same Open Library match. Details
-  (names, country, years, genres, notable works) come from Wikidata, with
+  (names, country, years, notable works) come from Wikidata, with
   labels in KOReader's language where available. The bio is the
   introduction of the author's Wikipedia page (everything before its first
   heading) in KOReader's language, else in English, else Open Library's

@@ -1,6 +1,5 @@
 -- What we know about an author besides their photo: a short bio, their
--- country, birth and death years, given and family names, genres and notable
--- works. Saved as <data dir>/authorinfo/<author>.json, beside their photo
+-- country, birth and death years, given and family names and notable works. Saved as <data dir>/authorinfo/<author>.json, beside their photo
 -- (author_images), one file per author,
 -- so each lookup (a forked child) writes only its own file.
 --
@@ -9,7 +8,7 @@
 --   1. Open Library's author record: its bio, dates, and Wikidata id.
 --   2. Without a Wikidata id there, the writer's Wikipedia page's one.
 --   3. Wikidata, through its query service (many authors at once): names,
---      country of citizenship, dates, genres, notable works, and the title of
+--      country of citizenship, dates, notable works, and the title of
 --      the author's Wikipedia page, with labels in KOReader's language where
 --      Wikidata has them.
 --   4. The bio: the introduction (the lead section, before the first
@@ -46,7 +45,6 @@ local P = {
     country = "P27",
     born = "P569",
     died = "P570",
-    genres = "P136",
     works = "P800",
 }
 -- Historical states, as Wikidata gives an older author's citizenship, and the
@@ -75,7 +73,6 @@ local COUNTRY_SUCCESSORS = {
 }
 M.COUNTRY_SUCCESSORS = COUNTRY_SUCCESSORS
 
-local MAX_GENRES = 5
 local MAX_WORKS = 8
 -- An Open Library bio is cut at a sentence end after this many characters.
 local MAX_BIO_CHARS = 1200
@@ -639,7 +636,7 @@ function M.addWikidata(jobs, opts)
         for id, value in pairs(wikidata_labels(missing, languages, transport, state)) do labels[id] = value end
     end
 
-    local limits = { genres = MAX_GENRES, works = MAX_WORKS }
+    local limits = { works = MAX_WORKS }
     for _i, job in ipairs(jobs) do
         local entry = job.wikidata and found[job.wikidata]
         if entry then
@@ -649,7 +646,7 @@ function M.addWikidata(jobs, opts)
             info.died = entry.died and M.year(entry.died[1].time)
             -- info field <- query field (P's names)
             for field, from in pairs({ given = "given", family = "family", countries = "country",
-                    genres = "genres", works = "works" }) do
+                    works = "works" }) do
                 local values, seen_value = {}, {}
                 for _k, value in ipairs(entry[from] or {}) do
                     local id = from == "country" and COUNTRY_SUCCESSORS[value.id] or value.id

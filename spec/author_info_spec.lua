@@ -58,7 +58,6 @@ describe("author info", function()
         country = { { "Q30", "United States" } },
         born = "1929-10-21T00:00:00Z",
         died = "2018-01-22T00:00:00Z",
-        genres = { { "Q132311", "fantasy" }, { "Q24925", "science fiction" } },
         works = { { "Q7", "The Dispossessed" } },
         sites = { en = "Ursula K. Le Guin" },
     }
@@ -103,7 +102,6 @@ describe("author info", function()
         assert.are.same({ "United States" }, info.countries)
         assert.are.same({ "Ursula" }, info.given)
         assert.are.same({ "Kroeber", "Le Guin" }, info.family) -- by item id, whatever the rows' order
-        assert.are.same({ "science fiction", "fantasy" }, info.genres)
         assert.are.same({ "The Dispossessed" }, info.works)
         -- The whole introduction, one blank line between paragraphs, its first
         -- paragraph the tidied summary rather than the extract's debris.
@@ -275,10 +273,10 @@ describe("author info", function()
         assert.are.same({ "The Dispossessed" }, AuthorInfo.load("Ursula K. Le Guin").works)
     end)
 
-    it("orders given names by their series ordinal, and keeps few genres and works", function()
-        local genres = {}
-        for i = 1, 7 do genres[i] = { "Q" .. (100 + i), "genre " .. i } end
-        local data = sparql({ Q1 = { given = { { "Q20", "Hugh", "2" }, { "Q10", "Hector", "1" } }, genres = genres } })
+    it("orders given names by their series ordinal, and keeps few works", function()
+        local works = {}
+        for i = 1, 10 do works[i] = { "Q" .. (100 + i), "work " .. i } end
+        local data = sparql({ Q1 = { given = { { "Q20", "Hugh", "2" }, { "Q10", "Hector", "1" } }, works = works } })
         local parsed = AuthorInfo.parseWikidata(data)
         assert.are.equal("Hector", parsed.Q1.given[1].label)
         assert.are.equal("Hugh", parsed.Q1.given[2].label)
@@ -287,7 +285,8 @@ describe("author info", function()
             return { status = 200, headers = {}, body = JSON.encode(data) }
         end })
         assert.are.same({ "Hector", "Hugh" }, job.info.given)
-        assert.are.same({ "genre 1", "genre 2", "genre 3", "genre 4", "genre 5" }, job.info.genres)
+        assert.are.same({ "work 1", "work 2", "work 3", "work 4", "work 5", "work 6", "work 7", "work 8" },
+            job.info.works)
     end)
 
     it("picks the family name the shown name contains, latest first", function()
