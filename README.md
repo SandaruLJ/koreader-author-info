@@ -17,7 +17,9 @@ Browse your library by author, with a photo and a short bio of each author.
   on are greyed out.
 - **Author information** is laid out like KOReader's Book information:
   name, years, country, notable works, bio (tap to read), photo (tap
-  to display), number of books in the library, and sources.
+  to display), number of books in the library, and sources. Tap the
+  sources to read the author's full Wikipedia page in KOReader's Wikipedia
+  viewer, which can also save it as an EPUB.
 - The **☰ button** has:
   - **Sort by:** first name, last name, number of books or recently read,
     optionally reversed. For first name, a name written "Le Guin, Ursula K."

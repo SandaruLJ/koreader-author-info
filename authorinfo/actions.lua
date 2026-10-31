@@ -603,7 +603,8 @@ end
 -- showDetails(name, book_count): "Author information", built like KOReader's
 -- "Book information": a key/value page, the photo behind "Tap to display" as
 -- the cover image is, and the bio opening in a text viewer as the
--- description does. Long values show in full when tapped.
+-- description does. Tapping Sources opens the author's full Wikipedia page in
+-- KOReader's Wikipedia viewer. Long values show in full when tapped.
 function M.showDetails(name, book_count)
     local info = infos().load(name) or {}
     local photo = images().path(name)
@@ -634,7 +635,13 @@ function M.showDetails(name, book_count)
     if book_count then
         kv_pairs[#kv_pairs + 1] = { _("Books in library:"), tostring(book_count) }
     end
-    kv_pairs[#kv_pairs + 1] = { _("Sources:"), infos().sourcesText(info) or n_a }
+    local page = type(info.wikipedia) == "table" and info.wikipedia.title and info.wikipedia
+    kv_pairs[#kv_pairs + 1] = { _("Sources:"), infos().sourcesText(info) or n_a,
+        callback = page and function()
+            local ui = require("apps/reader/readerui").instance or require("apps/filemanager/filemanager").instance
+            if ui and ui.wikipedia then ui.wikipedia:onLookupWikipedia(page.title, true, nil, true, page.lang) end
+        end or nil,
+    }
     UIManager:show(require("ui/widget/keyvaluepage"):new{
         title = _("Author information"),
         value_overflow_align = "right",
