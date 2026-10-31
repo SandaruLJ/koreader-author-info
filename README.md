@@ -36,8 +36,6 @@ Browse your library by author, with a photo and a short bio of each author.
     - **New** / **Reading:** authors with a book that is new or in progress.
     - **Read:** authors with at least one finished book.
     - **Unread:** authors with no finished book at all.
-  - **Name position** (in the grid): below the photo, or on the photo in
-    white on a black band across its bottom.
   - **Find missing:** look up the images, information, or both, of the
     authors shown that don't have them yet. The device is kept awake until
     the lookup finishes. Authors are looked up on Open Library one by one,

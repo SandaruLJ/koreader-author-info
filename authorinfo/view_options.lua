@@ -1,5 +1,4 @@
--- The Authors view's sort order, filters and where the grid shows names
--- (name_position), remembered between visits the
+-- The Authors view's sort order and filters, remembered between visits the
 -- way KOReader remembers a collection's (saved as they change, no "save view"
 -- step).
 --
@@ -28,11 +27,6 @@ local SETTINGS_KEY = "authorinfo_view"
 M.STATUSES = { "new", "reading", "unread", "read" }
 M.PROPS = { "language", "keywords" }
 
--- Where a grid tile shows the author's name.
-M.NAME_POSITIONS = {
-    below = { text = _("Below photo"), order = 1 },
-    on_photo = { text = _("On photo"), order = 2 },
-}
 M.AUTHOR_PROPS = { "country" }
 -- Where an author property's values are in author_info's records.
 local AUTHOR_FIELDS = { country = "countries" }
@@ -69,7 +63,6 @@ function M.load()
         sort = M.SORTS[saved.sort] and saved.sort or "first_name",
         reverse = saved.reverse == true,
         filter = filter,
-        name_position = M.NAME_POSITIONS[saved.name_position] and saved.name_position or "below",
     }
 end
 
@@ -78,7 +71,6 @@ function M.save(options)
         sort = options.sort,
         reverse = options.reverse or nil,
         filter = next(options.filter) and options.filter or nil,
-        name_position = options.name_position ~= "below" and options.name_position or nil,
     })
 end
 
