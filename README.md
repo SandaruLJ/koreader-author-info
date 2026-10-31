@@ -99,8 +99,9 @@ Cover browser plugin (bundled with KOReader).
 ## Releasing
 
 Bump `version` in `_meta.lua`, commit and push to `main`. The release
-workflow checks that every Lua file compiles, then publishes `v<version>`
-with the zip and the commits since the previous release.
+workflow checks that every Lua file compiles, then drafts `v<version>`
+with the zip and the commits since the previous release. Review the notes
+on GitHub and publish the draft.
 
 ## Credits and license
 

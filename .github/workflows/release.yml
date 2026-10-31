@@ -1,9 +1,11 @@
 name: Release
 
-# Publishes a release when the version in _meta.lua is new: bump it, commit
-# and push to main. The release is tagged v<version> and carries
+# Drafts a release when the version in _meta.lua is new: bump it, commit
+# and push to main, then review the draft's notes on GitHub and publish it.
+# The release is tagged v<version> when published and carries
 # authorinfo.koplugin.zip, which unzips into KOReader's plugins folder.
-# Pushes that leave the version alone do nothing.
+# Pushes that leave the version alone, or whose version is already drafted
+# or released, do nothing.
 
 on:
   push:
@@ -31,14 +33,14 @@ jobs:
           fi
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Skip a version already released
+      - name: Skip a version already drafted or released
         id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.meta.outputs.tag }}
         run: |
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "$TAG is already released."
+            echo "$TAG is already drafted or released."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -66,8 +68,9 @@ jobs:
           cp -r _meta.lua main.lua authorinfo README.md LICENSE build/authorinfo.koplugin/
           (cd build && zip -r ../authorinfo.koplugin.zip authorinfo.koplugin)
 
-      # Notes list the commits since the previous release.
-      - name: Publish the release
+      # Notes list the commits since the previous release, to edit before
+      # publishing.
+      - name: Draft the release
         if: steps.check.outputs.skip == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -80,4 +83,4 @@ jobs:
             echo "First release." > notes.md
           fi
           gh release create "$TAG" authorinfo.koplugin.zip \
-            --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA"
+            --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA" --draft
