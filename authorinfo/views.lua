@@ -465,7 +465,7 @@ function M.showAuthors(ui)
                 apply()
             end,
         }}
-        dialog = ButtonDialog:new{ title = _("Sort authors by"), buttons = rows }
+        dialog = ButtonDialog:new{ title = _("Sort authors by"), title_align = "center", buttons = rows }
         UIManager:show(dialog)
     end
 
@@ -515,6 +515,7 @@ function M.showAuthors(ui)
         end
         dialog = ButtonDialog:new{
             title = _("Filter authors"),
+            title_align = "center",
             buttons = {
                 { status_button("new"), status_button("reading") },
                 { status_button("unread"), status_button("read") },
@@ -556,7 +557,7 @@ function M.showAuthors(ui)
                 end,
             }}
         end
-        dialog = ButtonDialog:new{ title = _("Name position"), buttons = rows }
+        dialog = ButtonDialog:new{ title = _("Name position"), title_align = "center", buttons = rows }
         UIManager:show(dialog)
     end
 
@@ -610,10 +611,12 @@ function M.showAuthors(ui)
             end
             kinds_dialog = ButtonDialog:new{
                 title = title,
-                buttons = {
-                    { kind(_("Information"), { info = true }), kind(_("Images"), { photo = true }) },
-                    { kind(_("Both"), { photo = true, info = true }) },
-                },
+                title_align = "center",
+                buttons = {{
+                    kind(_("Information"), { info = true }),
+                    kind(_("Images"), { photo = true }),
+                    kind(_("Both"), { photo = true, info = true }),
+                }},
             }
             UIManager:show(kinds_dialog)
         end
@@ -655,7 +658,7 @@ function M.showAuthors(ui)
             local rows = Actions.holdButtons(item.text, function() UIManager:close(dialog) end, refresh,
                 #item.files)
             if #rows == 0 then return true end
-            dialog = ButtonDialog:new{ title = item.text, buttons = rows }
+            dialog = ButtonDialog:new{ title = item.text, title_align = "center", buttons = rows }
             UIManager:show(dialog)
             return true
         end,
