@@ -446,15 +446,17 @@ function M.showAuthors(ui)
         local ids = {}
         for id in pairs(ViewOptions.SORTS) do ids[#ids + 1] = id end
         table.sort(ids, function(x, y) return ViewOptions.SORTS[x].order < ViewOptions.SORTS[y].order end)
-        for _i, id in ipairs(ids) do
-            rows[#rows + 1] = {{
+        -- Two to a row: First name | Last name, Number of books | Recently read.
+        for i, id in ipairs(ids) do
+            if i % 2 == 1 then rows[#rows + 1] = {} end
+            table.insert(rows[#rows], {
                 text = ViewOptions.SORTS[id].text .. (options.sort == id and CHECK or ""),
                 callback = function()
                     UIManager:close(dialog)
                     options.sort = id
                     apply()
                 end,
-            }}
+            })
         end
         rows[#rows + 1] = {}
         rows[#rows + 1] = {{
