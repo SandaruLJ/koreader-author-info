@@ -1,3 +1,8 @@
+> [!NOTE]
+> This plugin is entirely vibe-coded and intended for my own personal use.
+> It works on my e-reader, it has tests, and it has not yet set
+> anything on fire. Your mileage may vary; maintenance isn't guaranteed.
+
 # Author Info for KOReader
 
 Browse your library by author, with a photo and a short bio of each author.
