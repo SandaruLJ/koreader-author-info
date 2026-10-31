@@ -27,7 +27,8 @@ Browse your library by author, with a photo and a short bio of each author.
   to display), number of books in the library, time spent reading them
   (from KOReader's Statistics, in your duration format), and sources. Tap the
   sources to read the author's full Wikipedia page in KOReader's Wikipedia
-  viewer, which can also save it as an EPUB.
+  viewer, which can also save it as an EPUB. Countries, languages and
+  notable works are listed as Book information lists authors and keywords.
 - The **☰ button** has:
   - **Sort by:** first name, last name, number of books or recently read,
     optionally reversed. For first name, a name written "Le Guin, Ursula K."

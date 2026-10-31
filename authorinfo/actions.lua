@@ -596,8 +596,15 @@ local function show_photo(path)
     })
 end
 
+-- One value per line, as Book information lists authors and keywords: the
+-- row shows them as "Value 1|Value 2", and tapping a long row lists them one
+-- per line.
 local function list(values)
-    return type(values) == "table" and #values > 0 and table.concat(values, ", ") or nil
+    if type(values) ~= "table" or #values == 0 then return nil end
+    local BD = require("ui/bidi")
+    local isolated = {}
+    for i, value in ipairs(values) do isolated[i] = BD.auto(value) end
+    return table.concat(isolated, "\n")
 end
 
 -- showDetails(name, files): "Author information", built like KOReader's
