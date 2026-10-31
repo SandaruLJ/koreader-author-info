@@ -81,8 +81,18 @@ Books with several authors are listed under each of them.
 
 ## Install
 
-Copy this folder into KOReader's `plugins` folder as `authorinfo.koplugin`.
-Requires the Cover browser plugin (bundled with KOReader).
+Download `authorinfo.koplugin.zip` from the
+[latest release](https://github.com/SandaruLJ/koreader-authorinfo/releases/latest)
+and unzip it into KOReader's `plugins` folder, so that it holds an
+`authorinfo.koplugin` folder. To update, unzip a newer release over it; your
+author images, information and settings are kept elsewhere. Requires the
+Cover browser plugin (bundled with KOReader).
+
+## Releasing
+
+Bump `version` in `_meta.lua`, commit and push to `main`. The release
+workflow checks that every Lua file compiles, then publishes `v<version>`
+with the zip and the commits since the previous release.
 
 ## Credits and license
 

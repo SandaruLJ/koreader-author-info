@@ -1,0 +1,83 @@
+name: Release
+
+# Publishes a release when the version in _meta.lua is new: bump it, commit
+# and push to main. The release is tagged v<version> and carries
+# authorinfo.koplugin.zip, which unzips into KOReader's plugins folder.
+# Pushes that leave the version alone do nothing.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, for the release notes
+
+      - name: Read the version from _meta.lua
+        id: meta
+        run: |
+          VERSION=$(grep -oP '(?<=version = ")[^"]+' _meta.lua)
+          if [ -z "$VERSION" ]; then
+            echo "Couldn't read the version from _meta.lua" >&2
+            exit 1
+          fi
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Skip a version already released
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "$TAG is already released."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install LuaJIT
+        if: steps.check.outputs.skip == 'false'
+        run: sudo apt-get update && sudo apt-get install -y luajit
+
+      # KOReader runs LuaJIT (Lua 5.1); -b compiles without running, so
+      # KOReader's own modules aren't needed.
+      - name: Check every Lua file compiles
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          fail=0
+          for f in _meta.lua main.lua authorinfo/*.lua; do
+            luajit -b "$f" /dev/null || { echo "Doesn't compile: $f"; fail=1; }
+          done
+          exit $fail
+
+      - name: Build authorinfo.koplugin.zip
+        if: steps.check.outputs.skip == 'false'
+        run: |
+          mkdir -p build/authorinfo.koplugin
+          cp -r _meta.lua main.lua authorinfo README.md LICENSE build/authorinfo.koplugin/
+          (cd build && zip -r ../authorinfo.koplugin.zip authorinfo.koplugin)
+
+      # Notes list the commits since the previous release.
+      - name: Publish the release
+        if: steps.check.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          PREVIOUS=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          if [ -n "$PREVIOUS" ]; then
+            git log --no-merges --pretty='- %s' "$PREVIOUS..HEAD" > notes.md
+          else
+            echo "First release." > notes.md
+          fi
+          gh release create "$TAG" authorinfo.koplugin.zip \
+            --title "$TAG" --notes-file notes.md --target "$GITHUB_SHA"

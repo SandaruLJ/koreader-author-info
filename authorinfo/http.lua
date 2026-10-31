@@ -6,9 +6,15 @@ local json = require("json")
 local logger = require("logger")
 
 local M = {}
+-- The plugin's version, from _meta.lua two folders up from this file.
+local function plugin_version()
+    local dir = debug.getinfo(1, "S").source:match("^@(.*)/authorinfo/[^/]+$")
+    local ok, meta = pcall(dofile, (dir or ".") .. "/_meta.lua")
+    return ok and type(meta) == "table" and meta.version or "1.0.0"
+end
 -- Open Library and Wikimedia ask for a contact in the User-Agent, and limit
 -- requests without one more strictly.
-local USER_AGENT = "KOReader-AuthorInfo-plugin/1.0 (sandarulj@outlook.com)"
+local USER_AGENT = "KOReader-AuthorInfo-plugin/" .. plugin_version() .. " (sandarulj@outlook.com)"
 local BLOCK_TIMEOUT = 6
 local TOTAL_TIMEOUT = 12
 local MAX_RESPONSE_BYTES = 2 * 1024 * 1024
