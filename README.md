@@ -17,7 +17,8 @@ Browse your library by author, with a photo and a short bio of each author.
   on are greyed out.
 - **Author information** is laid out like KOReader's Book information:
   name, years, country, notable works, bio (tap to read), photo (tap
-  to display), number of books in the library, and sources. Tap the
+  to display), number of books in the library, time spent reading them
+  (from KOReader's Statistics, in your duration format), and sources. Tap the
   sources to read the author's full Wikipedia page in KOReader's Wikipedia
   viewer, which can also save it as an EPUB.
 - The **☰ button** has:

@@ -80,14 +80,14 @@ describe("actions", function()
             { "View information", "(View image)" },
             { "Find information", "Find image" },
             { "(Remove information)", "(Remove image)" },
-        }, grid(Actions.holdButtons("Saki", noop, noop, 1)))
+        }, grid(Actions.holdButtons("Saki", noop, noop, { "/a" })))
         has_photo["Saki"], has_info["Saki"] = true, true
         assert.are.same({
             { "View information", "View image" },
             { "Replace information", "Replace image" },
             { "Remove information", "Remove image" },
-        }, grid(Actions.holdButtons("Saki", noop, noop, 1)))
-        assert.are.same({}, Actions.holdButtons("Anonymous", noop, noop, 1))
+        }, grid(Actions.holdButtons("Saki", noop, noop, { "/a" })))
+        assert.are.same({}, Actions.holdButtons("Anonymous", noop, noop, { "/a" }))
     end)
 
     it("keeps KOReader awake while held, and puts everything back after the last release", function()

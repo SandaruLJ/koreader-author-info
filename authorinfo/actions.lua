@@ -17,7 +17,7 @@
 --   remove(name, on_done, what) -- an author's hold menu: deletes their
 --                                photo or information (what.photo,
 --                                what.info), after a confirm.
---   showDetails(name, count)  -- "Author information", laid out like
+--   showDetails(name, files)  -- "Author information", laid out like
 --                                KOReader's "Book information".
 --
 -- Lookups wait for Wi-Fi the KOReader way (runWhenOnline asks; nothing
@@ -600,12 +600,14 @@ local function list(values)
     return type(values) == "table" and #values > 0 and table.concat(values, ", ") or nil
 end
 
--- showDetails(name, book_count): "Author information", built like KOReader's
+-- showDetails(name, files): "Author information", built like KOReader's
 -- "Book information": a key/value page, the photo behind "Tap to display" as
 -- the cover image is, and the bio opening in a text viewer as the
 -- description does. Tapping Sources opens the author's full Wikipedia page in
--- KOReader's Wikipedia viewer. Long values show in full when tapped.
-function M.showDetails(name, book_count)
+-- KOReader's Wikipedia viewer. files are the author's books in the library,
+-- for their number and the time spent reading them. Long values show in full
+-- when tapped.
+function M.showDetails(name, files)
     local info = infos().load(name) or {}
     local photo = images().path(name)
     local n_a = _("N/A")
@@ -632,8 +634,13 @@ function M.showDetails(name, book_count)
             separator = true,
         },
     }
-    if book_count then
-        kv_pairs[#kv_pairs + 1] = { _("Books in library:"), tostring(book_count) }
+    if files then
+        kv_pairs[#kv_pairs + 1] = { _("Books in library:"), tostring(#files) }
+        -- As Statistics shows it, in the reader's duration format.
+        local seconds = require("authorinfo/reading_time").seconds(files)
+        local format = G_reader_settings:readSetting("duration_format", "classic")
+        kv_pairs[#kv_pairs + 1] = { _("Time spent reading:"),
+            seconds and require("datetime").secondsToClockDuration(format, seconds, false) or n_a }
     end
     local page = type(info.wikipedia) == "table" and info.wikipedia.title and info.wikipedia
     kv_pairs[#kv_pairs + 1] = { _("Sources:"), infos().sourcesText(info) or n_a,
@@ -649,11 +656,11 @@ function M.showDetails(name, book_count)
     })
 end
 
--- holdButtons(name, close_dialog, on_done, book_count) -> ButtonDialog rows
+-- holdButtons(name, close_dialog, on_done, files) -> ButtonDialog rows
 -- for an author's hold menu: view, find or replace, and remove, each with the
 -- information beside the image. Buttons with nothing to act on are greyed
 -- out, as KOReader's book hold menu does with Book cover.
-function M.holdButtons(name, close_dialog, on_done, book_count)
+function M.holdButtons(name, close_dialog, on_done, files)
     if type(name) ~= "string" or name == "" or images().isPlaceholder(name) then
         return {}
     end
@@ -670,7 +677,7 @@ function M.holdButtons(name, close_dialog, on_done, book_count)
     end
     return {
         {
-            button(_("View information"), true, function() M.showDetails(name, book_count) end),
+            button(_("View information"), true, function() M.showDetails(name, files) end),
             button(_("View image"), has_photo, function() show_photo(images().path(name)) end),
         },
         {

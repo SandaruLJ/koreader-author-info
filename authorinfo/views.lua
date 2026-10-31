@@ -315,7 +315,7 @@ function M.showBooks(ui, author, files, on_open)
         ui = ui,
         -- Author information, as Book information is for a book.
         title_bar_left_icon = "info",
-        onLeftButtonTap = function() Actions.showDetails(author, count) end,
+        onLeftButtonTap = function() Actions.showDetails(author, files) end,
         onReturn = function() books.close_callback() end,
         onMenuSelect = function(_self, item)
             filemanagerutil.openFile(ui, item.file, function()
@@ -665,7 +665,7 @@ function M.showAuthors(ui)
         onMenuHold = function(_self, item)
             local dialog
             local rows = Actions.holdButtons(item.text, function() UIManager:close(dialog) end, refresh,
-                #item.files)
+                item.files)
             if #rows == 0 then return true end
             dialog = ButtonDialog:new{ title = item.text, title_align = "center", buttons = rows }
             UIManager:show(dialog)
