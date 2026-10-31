@@ -600,20 +600,19 @@ function M.showAuthors(ui)
         local function show_kinds_dialog(title, act)
             local kinds_dialog
             local function kind(text, what)
-                return {{
+                return {
                     text = text,
                     callback = function()
                         UIManager:close(kinds_dialog)
                         act(names(), refresh, what)
                     end,
-                }}
+                }
             end
             kinds_dialog = ButtonDialog:new{
                 title = title,
                 buttons = {
-                    kind(_("Images"), { photo = true }),
-                    kind(_("Information"), { info = true }),
-                    kind(_("Both"), { photo = true, info = true }),
+                    { kind(_("Information"), { info = true }), kind(_("Images"), { photo = true }) },
+                    { kind(_("Both"), { photo = true, info = true }) },
                 },
             }
             UIManager:show(kinds_dialog)

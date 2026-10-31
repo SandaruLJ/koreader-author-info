@@ -43,19 +43,30 @@ describe("actions", function()
         }, Actions.plan(names, { photo = true, info = true }))
     end)
 
-    it("offers to find or replace the photo and the information separately", function()
-        local function texts(rows)
+    it("lays out view, find or replace, and remove, greying out what has nothing to act on", function()
+        local function grid(rows)
             local list = {}
-            for _i, row in ipairs(rows) do list[#list + 1] = row[1].text end
+            for _i, row in ipairs(rows) do
+                local texts = {}
+                for _j, button in ipairs(row) do
+                    texts[#texts + 1] = button.enabled and button.text or "(" .. button.text .. ")"
+                end
+                list[#list + 1] = texts
+            end
             return list
         end
         local noop = function() end
-        assert.are.same({ "Author information", "Find author information online", "Find author image online" },
-            texts(Actions.holdButtons("Saki", noop, noop, 1)))
+        assert.are.same({
+            { "View information", "(View image)" },
+            { "Find information", "Find image" },
+            { "(Remove information)", "(Remove image)" },
+        }, grid(Actions.holdButtons("Saki", noop, noop, 1)))
         has_photo["Saki"], has_info["Saki"] = true, true
-        assert.are.same({ "Author information", "Replace author information online",
-                "Replace author image online", "Remove author image" },
-            texts(Actions.holdButtons("Saki", noop, noop, 1)))
+        assert.are.same({
+            { "View information", "View image" },
+            { "Replace information", "Replace image" },
+            { "Remove information", "Remove image" },
+        }, grid(Actions.holdButtons("Saki", noop, noop, 1)))
         assert.are.same({}, Actions.holdButtons("Anonymous", noop, noop, 1))
     end)
 

@@ -11,7 +11,9 @@
 --   clear(names, on_done, what) -- deletes the saved photos and/or
 --                                information of the given authors, after a
 --                                confirm.
---   remove(name, on_done)     -- an author's hold menu, when a photo is set.
+--   remove(name, on_done, what) -- an author's hold menu: deletes their
+--                                photo or information (what.photo,
+--                                what.info), after a confirm.
 --   showDetails(name, count)  -- "Author information", laid out like
 --                                KOReader's "Book information".
 --
@@ -507,8 +509,28 @@ function M.clear(names, on_done, what)
     })
 end
 
-function M.remove(name, on_done)
-    if images().remove(name) then notify(on_done) end
+function M.remove(name, on_done, what)
+    local text = what.photo
+        and T(_("Remove the image of %1?\n\nAn image you put in the folder yourself can't be found again online."),
+            name)
+        or T(_("Remove the information about %1?"), name)
+    UIManager:show(ConfirmBox:new{
+        text = text,
+        ok_text = _("Remove"),
+        ok_callback = function()
+            local removed = what.photo and images().remove(name) or what.info and infos().remove(name)
+            if removed then notify(on_done) end
+        end,
+    })
+end
+
+-- The photo full screen, as Book information's cover image.
+local function show_photo(path)
+    UIManager:show(require("ui/widget/imageviewer"):new{
+        file = path,
+        with_title_bar = false,
+        fullscreen = true,
+    })
 end
 
 local function list(values)
@@ -543,13 +565,7 @@ function M.showDetails(name, book_count)
         -- The photo in a section of its own, as the cover image is in Book
         -- information.
         { _("Photo:"), photo and _("Tap to display") or n_a,
-            callback = photo and function()
-                UIManager:show(require("ui/widget/imageviewer"):new{
-                    file = photo,
-                    with_title_bar = false,
-                    fullscreen = true,
-                })
-            end or nil,
+            callback = photo and function() show_photo(photo) end or nil,
             separator = true,
         },
     }
@@ -565,45 +581,40 @@ function M.showDetails(name, book_count)
 end
 
 -- holdButtons(name, close_dialog, on_done, book_count) -> ButtonDialog rows
--- for an author's hold menu.
+-- for an author's hold menu: view, find or replace, and remove, each with the
+-- information beside the image. Buttons with nothing to act on are greyed
+-- out, as KOReader's book hold menu does with Book cover.
 function M.holdButtons(name, close_dialog, on_done, book_count)
     if type(name) ~= "string" or name == "" or images().isPlaceholder(name) then
         return {}
     end
-    local rows = {{{
-        text = _("Author information"),
-        callback = function()
-            close_dialog()
-            M.showDetails(name, book_count)
-        end,
-    }}}
-    -- The information's entries, then the photo's.
-    rows[#rows + 1] = {{
-        text = infos().has(name) and _("Replace author information online")
-            or _("Find author information online"),
-        callback = function()
-            close_dialog()
-            M.findInfo(name, on_done)
-        end,
-    }}
-    local has_photo = images().has(name)
-    rows[#rows + 1] = {{
-        text = has_photo and _("Replace author image online") or _("Find author image online"),
-        callback = function()
-            close_dialog()
-            M.findPhoto(name, on_done)
-        end,
-    }}
-    if has_photo then
-        rows[#rows + 1] = {{
-            text = _("Remove author image"),
+    local has_info, has_photo = infos().has(name), images().has(name)
+    local function button(text, enabled, fn)
+        return {
+            text = text,
+            enabled = enabled,
             callback = function()
                 close_dialog()
-                M.remove(name, on_done)
+                fn()
             end,
-        }}
+        }
     end
-    return rows
+    return {
+        {
+            button(_("View information"), true, function() M.showDetails(name, book_count) end),
+            button(_("View image"), has_photo, function() show_photo(images().path(name)) end),
+        },
+        {
+            button(has_info and _("Replace information") or _("Find information"), true,
+                function() M.findInfo(name, on_done) end),
+            button(has_photo and _("Replace image") or _("Find image"), true,
+                function() M.findPhoto(name, on_done) end),
+        },
+        {
+            button(_("Remove information"), has_info, function() M.remove(name, on_done, { info = true }) end),
+            button(_("Remove image"), has_photo, function() M.remove(name, on_done, { photo = true }) end),
+        },
+    }
 end
 
 return M
