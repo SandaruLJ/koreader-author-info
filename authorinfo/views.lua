@@ -597,8 +597,9 @@ function M.showAuthors(ui)
         end
         buttons[#buttons + 1] = {}
         -- Find missing and Clear each choose images, information or both,
-        -- for the authors shown.
-        local function show_kinds_dialog(title, act)
+        -- for the authors shown. Clear also offers Prune authors, for the
+        -- authors no longer in the library.
+        local function show_kinds_dialog(title, act, with_prune)
             local kinds_dialog
             local function kind(text, what)
                 return {
@@ -609,15 +610,23 @@ function M.showAuthors(ui)
                     end,
                 }
             end
-            kinds_dialog = ButtonDialog:new{
-                title = title,
-                title_align = "center",
-                buttons = {{
-                    kind(_("Information"), { info = true }),
-                    kind(_("Images"), { photo = true }),
-                    kind(_("Both"), { photo = true, info = true }),
-                }},
-            }
+            local rows = {{
+                kind(_("Information"), { info = true }),
+                kind(_("Images"), { photo = true }),
+                kind(_("Both"), { photo = true, info = true }),
+            }}
+            if with_prune then
+                rows[2] = {{
+                    text = _("Prune authors"),
+                    callback = function()
+                        UIManager:close(kinds_dialog)
+                        local all = {}
+                        for _i, author in ipairs(AuthorIndex.getAuthors(books)) do all[#all + 1] = author.name end
+                        Actions.prune(all, refresh)
+                    end,
+                }}
+            end
+            kinds_dialog = ButtonDialog:new{ title = title, title_align = "center", buttons = rows }
             UIManager:show(kinds_dialog)
         end
         buttons[#buttons + 1] = {{
@@ -631,7 +640,7 @@ function M.showAuthors(ui)
             text = _("Clear") .. "  \u{25B8}",
             callback = function()
                 UIManager:close(dialog)
-                show_kinds_dialog(_("Clear"), Actions.clear)
+                show_kinds_dialog(_("Clear"), Actions.clear, true)
             end,
         }}
         dialog = ButtonDialog:new{ buttons = buttons }

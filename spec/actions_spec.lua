@@ -16,9 +16,20 @@ describe("actions", function()
         package.loaded["authorinfo/author_images"] = {
             isPlaceholder = function(name) return name == "Anonymous" end,
             has = function(name) return has_photo[name] == true end,
+            fileStem = function(name) return (name:gsub(",", "-")) end,
+            savedStems = function()
+                local stems = {}
+                for name in pairs(has_photo) do stems[#stems + 1] = name end
+                return stems
+            end,
         }
         package.loaded["authorinfo/author_info"] = {
             has = function(name) return has_info[name] == true end,
+            savedStems = function()
+                local stems = {}
+                for name in pairs(has_info) do stems[#stems + 1] = name end
+                return stems
+            end,
         }
         _G.os_execute_orig = _G.os_execute_orig or os.execute
         os.execute = function(command) executed[#executed + 1] = command end
@@ -41,6 +52,15 @@ describe("actions", function()
             { name = "Saki", photo = false, info = true },
             { name = "Terry Pratchett", photo = true, info = false },
         }, Actions.plan(names, { photo = true, info = true }))
+    end)
+
+    it("finds what is saved for authors no longer in the library, by file stem and any case", function()
+        has_photo["Saki"], has_photo["saki"], has_photo["Le Guin- Ursula"], has_photo["Gone"] = true, true, true, true
+        has_info["Saki"], has_info["Also Gone"] = true, true
+        assert.are.same({ photos = { "Gone" }, infos = { "Also Gone" } },
+            Actions.orphans({ "Saki", "Le Guin, Ursula" }))
+        assert.are.same({ photos = {}, infos = {} },
+            Actions.orphans({ "Saki", "saki", "Le Guin, Ursula", "Gone", "Also Gone" }))
     end)
 
     it("lays out view, find or replace, and remove, greying out what has nothing to act on", function()

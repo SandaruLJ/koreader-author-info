@@ -295,6 +295,21 @@ function M.has(name)
     return M.path(name) ~= nil
 end
 
+-- savedStems() -> the file stems that have a photo in the folder, as spelled
+-- there.
+function M.savedStems()
+    local stems = {}
+    for lower, file in pairs(names_in_dir(M.dir())) do
+        for _i, extension in ipairs(EXTENSIONS) do
+            if lower:sub(-#extension - 1) == "." .. extension then
+                stems[#stems + 1] = file:sub(1, #file - #extension - 1)
+                break
+            end
+        end
+    end
+    return stems
+end
+
 -- remove(name) -> true when a photo was removed.
 function M.remove(name)
     local stem = M.fileStem(name)

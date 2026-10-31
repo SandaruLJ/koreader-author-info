@@ -45,7 +45,9 @@ Browse your library by author, with a photo and a short bio of each author.
     tries those authors again.
   - **Clear:** delete the saved images, information, or both, of the
     authors shown (images include ones you added yourself). Use Find
-    missing afterwards to look them up afresh.
+    missing afterwards to look them up afresh. **Prune authors** deletes
+    what is saved for authors who no longer have books in the library,
+    as Cover browser's "Prune cache of removed books" does for books.
 
   These choices are remembered for next time, as KOReader does
   for Collections.

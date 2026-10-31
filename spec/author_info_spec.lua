@@ -348,6 +348,15 @@ describe("author info", function()
         assert.is_false(AuthorInfo.remove("Saki"))
     end)
 
+    it("lists the stems that have information", function()
+        assert.are.same({}, AuthorInfo.savedStems())
+        os.execute("mkdir -p '" .. dir .. "'")
+        for _i, file in ipairs({ "Saki.json", "Saki.jpg", ".hidden.json" }) do
+            io.open(dir .. "/" .. file, "w"):close()
+        end
+        assert.are.same({ "Saki" }, AuthorInfo.savedStems())
+    end)
+
     it("names the sources the information came from", function()
         assert.are.equal("Wikipedia (en), Wikidata", AuthorInfo.sourcesText({ bio_source = "wikipedia",
             wikipedia = { lang = "en" }, wikidata = "Q1" }))

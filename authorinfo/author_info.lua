@@ -131,6 +131,19 @@ function M.has(name)
     return M.load(name) ~= nil
 end
 
+-- savedStems() -> the file stems that have information in the folder.
+function M.savedStems()
+    local stems = {}
+    local ok, iter, dir_obj = pcall(lfs.dir, M.dir())
+    if ok and type(iter) == "function" then
+        for file in iter, dir_obj do
+            local stem = file:sub(1, 1) ~= "." and file:match("^(.+)%.json$")
+            if stem then stems[#stems + 1] = stem end
+        end
+    end
+    return stems
+end
+
 -- remove(name) -> true when saved information was deleted.
 function M.remove(name)
     local path = type(name) == "string" and M.path(name)

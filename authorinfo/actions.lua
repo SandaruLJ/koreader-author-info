@@ -11,6 +11,9 @@
 --   clear(names, on_done, what) -- deletes the saved photos and/or
 --                                information of the given authors, after a
 --                                confirm.
+--   prune(names, on_done)     -- deletes the saved photos and information of
+--                                authors not among names (the library's),
+--                                after a confirm.
 --   remove(name, on_done, what) -- an author's hold menu: deletes their
 --                                photo or information (what.photo,
 --                                what.info), after a confirm.
@@ -28,6 +31,7 @@ local InfoMessage = require("ui/widget/infomessage")
 local UIManager = require("ui/uimanager")
 local T = require("ffi/util").template
 local _ = require("gettext")
+local N_ = _.ngettext
 local logger = require("logger")
 
 local M = {}
@@ -504,6 +508,65 @@ function M.clear(names, on_done, what)
                 if what.photo then images().remove(name) end
                 if what.info then infos().remove(name) end
             end
+            notify(on_done)
+        end,
+    })
+end
+
+-- orphans(names) -> { photos = {stems}, infos = {stems} }: what is saved for
+-- authors not among names. Files are matched by stem, as path() finds them.
+function M.orphans(names)
+    local keep = {}
+    for _i, name in ipairs(names or {}) do
+        local stem = images().fileStem(name)
+        if stem then keep[stem:lower()] = true end
+    end
+    local function stray(stems)
+        local list = {}
+        for _i, stem in ipairs(stems) do
+            if not keep[stem:lower()] then list[#list + 1] = stem end
+        end
+        table.sort(list)
+        return list
+    end
+    return { photos = stray(images().savedStems()), infos = stray(infos().savedStems()) }
+end
+
+-- prune(names, on_done): as Cover browser's "Prune cache of removed books",
+-- for authors who no longer have books in the library.
+function M.prune(names, on_done)
+    local orphans = M.orphans(names)
+    local authors, count = {}, 0
+    for _i, list in ipairs({ orphans.photos, orphans.infos }) do
+        for _j, stem in ipairs(list) do
+            if not authors[stem:lower()] then
+                authors[stem:lower()] = true
+                count = count + 1
+            end
+        end
+    end
+    if count == 0 then
+        UIManager:show(InfoMessage:new{ text = _("There is nothing to prune."), timeout = 3 })
+        return
+    end
+    local lines = {
+        T(N_("Prune the saved images and information of 1 author who no longer has books in the library?",
+            "Prune the saved images and information of %1 authors who no longer have books in the library?",
+            count), count),
+        "",
+        T(_("Images: %1"), #orphans.photos),
+        T(_("Information: %1"), #orphans.infos),
+    }
+    if #orphans.photos > 0 then
+        lines[#lines + 1] = ""
+        lines[#lines + 1] = _("This includes images you put in the folder yourself.")
+    end
+    UIManager:show(ConfirmBox:new{
+        text = table.concat(lines, "\n"),
+        ok_text = _("Prune"),
+        ok_callback = function()
+            for _i, stem in ipairs(orphans.photos) do images().remove(stem) end
+            for _i, stem in ipairs(orphans.infos) do infos().remove(stem) end
             notify(on_done)
         end,
     })
